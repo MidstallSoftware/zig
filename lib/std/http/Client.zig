@@ -373,9 +373,11 @@ pub const Response = struct {
         };
         if (first_line[8] != ' ') return error.HttpHeadersInvalid;
         const status = @intToEnum(http.Status, parseInt3(first_line[9..12].*));
+        const reason = mem.trimLeft(u8, first_line[12..], " ");
 
         res.version = version;
         res.status = status;
+        res.reason = reason;
 
         while (it.next()) |line| {
             if (line.len == 0) return error.HttpHeadersInvalid;
@@ -456,8 +458,9 @@ pub const Response = struct {
         try expectEqual(@as(u10, 999), parseInt3("999".*));
     }
 
-    status: http.Status,
     version: http.Version,
+    status: http.Status,
+    reason: []const u8,
 
     content_length: ?u64 = null,
     transfer_encoding: ?http.TransferEncoding = null,
