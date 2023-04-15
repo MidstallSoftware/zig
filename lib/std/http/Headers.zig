@@ -59,15 +59,24 @@ pub const Headers = struct {
     list: HeaderList = .{},
     index: HeaderIndex = .{},
 
+    /// When this is false, names and values will not be duplicated.
+    /// Use with caution.
+    owned: bool = true,
+
+    pub fn init(allocator: Allocator) Headers {
+        return .{ .allocator = allocator };
+    }
+
     pub fn deinit(headers: *Headers) void {
         var it = headers.index.iterator();
         while (it.next()) |entry| {
             entry.value_ptr.deinit(headers.allocator);
-            headers.allocator.free(entry.key_ptr.*);
+
+            if (headers.owned) headers.allocator.free(entry.key_ptr.*);
         }
 
         for (headers.list.items) |entry| {
-            headers.allocator.free(entry.value);
+            if (headers.owned) headers.allocator.free(entry.value);
         }
 
         headers.index.deinit(headers.allocator);
@@ -80,8 +89,8 @@ pub const Headers = struct {
     pub fn append(headers: *Headers, name: []const u8, value: []const u8) !void {
         const n = headers.list.items.len;
 
-        const value_duped = try headers.allocator.dupe(u8, value);
-        errdefer headers.allocator.free(value_duped);
+        const value_duped = if (headers.owned) try headers.allocator.dupe(u8, value) else value;
+        errdefer if (headers.owned) headers.allocator.free(value_duped);
 
         var entry = HeaderEntry{ .name = undefined, .value = value_duped };
 
@@ -89,8 +98,8 @@ pub const Headers = struct {
             entry.name = kv.key_ptr.*;
             try kv.value_ptr.append(headers.allocator, n);
         } else {
-            const name_duped = try ascii.allocLowerString(headers.allocator, name);
-            errdefer headers.allocator.free(name_duped);
+            const name_duped = if (headers.owned) try headers.allocator.dupe(u8, name) else name;
+            errdefer if (headers.owned) headers.allocator.free(name_duped);
 
             entry.name = name_duped;
 
@@ -120,10 +129,10 @@ pub const Headers = struct {
                 const removed = headers.list.orderedRemove(data_index);
 
                 assert(ascii.eqlIgnoreCase(removed.name, name)); // ensure the index hasn't been corrupted
-                headers.allocator.free(removed.value);
+                if (headers.owned) headers.allocator.free(removed.value);
             }
 
-            headers.allocator.free(kv.key);
+            if (headers.owned) headers.allocator.free(kv.key);
             index.deinit(headers.allocator);
             headers.rebuildIndex();
 
@@ -217,6 +226,8 @@ pub const Headers = struct {
         _ = options;
 
         for (headers.list.items) |entry| {
+            if (entry.value.len == 0) continue;
+
             try out_stream.writeAll(entry.name);
             try out_stream.writeAll(": ");
             try out_stream.writeAll(entry.value);
