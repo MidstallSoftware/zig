@@ -96,6 +96,7 @@ pub const tz = @import("tz.zig");
 pub const unicode = @import("unicode.zig");
 pub const valgrind = @import("valgrind.zig");
 pub const wasm = @import("wasm.zig");
+pub const websocket = @import("websocket.zig");
 pub const zig = @import("zig.zig");
 pub const start = @import("start.zig");
 
