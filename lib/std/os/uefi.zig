@@ -3,9 +3,14 @@ const std = @import("../std.zig");
 /// A protocol is an interface identified by a GUID.
 pub const protocols = @import("uefi/protocols.zig");
 
+const tables = @import("uefi/tables.zig");
+pub const SystemTable = tables.SystemTable;
+pub const BootServices = tables.BootServices;
+pub const RuntimeServices = tables.RuntimeServices;
+pub const ConfigurationTable = tables.ConfigurationTable;
+
 /// Status codes returned by EFI interfaces
 pub const Status = @import("uefi/status.zig").Status;
-pub const tables = @import("uefi/tables.zig");
 
 /// The memory type to allocate when using the pool
 /// Defaults to .LoaderData, the default data allocation type
@@ -23,6 +28,12 @@ pub var system_table: *tables.SystemTable = undefined;
 /// A handle to an event structure.
 pub const Event = *opaque {};
 
+/// An EFI Handle represents a collection of related interfaces.
+pub const Handle = *opaque {};
+
+/// File Handle as specified in the EFI Shell Spec
+pub const FileHandle = *opaque {};
+
 pub const MacAddress = extern struct {
     address: [32]u8,
 };
@@ -35,9 +46,11 @@ pub const Ipv6Address = extern struct {
     address: [16]u8,
 };
 
+pub const EfiPhysicalAddress = u64;
+
 /// GUIDs are align(8) unless otherwise specified.
 pub const Guid = extern struct {
-    time_low: u32,
+    time_low: u32 align(8),
     time_mid: u16,
     time_high_and_version: u16,
     clock_seq_high_and_reserved: u8,
@@ -72,7 +85,7 @@ pub const Guid = extern struct {
         }
     }
 
-    pub fn eql(a: std.os.uefi.Guid, b: std.os.uefi.Guid) bool {
+    pub fn eql(a: Guid, b: Guid) bool {
         return a.time_low == b.time_low and
             a.time_mid == b.time_mid and
             a.time_high_and_version == b.time_high_and_version and
@@ -80,78 +93,57 @@ pub const Guid = extern struct {
             a.clock_seq_low == b.clock_seq_low and
             std.mem.eql(u8, &a.node, &b.node);
     }
+
+    test Guid {
+        var bytes = [_]u8{ 137, 60, 203, 50, 128, 128, 124, 66, 186, 19, 80, 73, 135, 59, 194, 135 };
+
+        var guid: Guid = @bitCast(bytes);
+
+        var str = try std.fmt.allocPrint(std.testing.allocator, "{}", .{guid});
+        defer std.testing.allocator.free(str);
+
+        try std.testing.expect(std.mem.eql(u8, str, "32cb3c89-8080-427c-ba13-5049873bc287"));
+    }
 };
 
-/// An EFI Handle represents a collection of related interfaces.
-pub const Handle = *opaque {};
+pub const TableHeader = extern struct {
+    /// A 64-bit signature that identifies the type of table that follows.
+    signature: u64,
 
-/// This structure represents time information.
-pub const Time = extern struct {
-    /// 1900 - 9999
-    year: u16,
+    /// The revision of the EFI Specification to which this table conforms
+    revision: u32,
 
-    /// 1 - 12
-    month: u8,
+    /// The size, in bytes, of the entire table including the TableHeader
+    header_size: u32,
 
-    /// 1 - 31
-    day: u8,
+    /// A CCITT32 checksum of the entire table (from the signature to signature + header_size) with this field set to 0.
+    crc32: u32,
 
-    /// 0 - 23
-    hour: u8,
+    /// Must always be zero.
+    reserved: u32,
 
-    /// 0 - 59
-    minute: u8,
+    /// Verify that the table is following at least the specified revision.
+    pub fn isAtLeast(self: TableHeader, major: u16, minor: u8, patch: u8) bool {
+        return self.revision >= (@as(u32, major) << 16) | (minor * 10) | patch;
+    }
 
-    /// 0 - 59
-    second: u8,
+    /// Check the integrity of the table.
+    pub fn check(self: *const TableHeader, signature: u64) !void {
+        if (self.signature != signature) return error.InvalidTable;
+        if (self.reserved != 0) return error.InvalidTable;
 
-    /// 0 - 999999999
-    nanosecond: u32,
+        const mutable: *TableHeader = @constCast(self);
+        const original = self.crc32;
+        var calculated: u32 = 0;
 
-    /// The time's offset in minutes from UTC.
-    /// Allowed values are -1440 to 1440 or unspecified_timezone
-    timezone: i16,
-    daylight: packed struct {
-        _pad1: u6,
+        mutable.crc32 = 0;
+        _ = system_table.boot_services.?.calculateCrc32(@ptrCast(self), self.header_size, &calculated);
+        mutable.crc32 = original;
 
-        /// If true, the time has been adjusted for daylight savings time.
-        in_daylight: bool,
-
-        /// If true, the time is affected by daylight savings time.
-        adjust_daylight: bool,
-    },
-
-    /// Time is to be interpreted as local time
-    pub const unspecified_timezone: i16 = 0x7ff;
+        if (calculated != original) return error.InvalidTable;
+    }
 };
-
-/// Capabilities of the clock device
-pub const TimeCapabilities = extern struct {
-    /// Resolution in Hz
-    resolution: u32,
-
-    /// Accuracy in an error rate of 1e-6 parts per million.
-    accuracy: u32,
-
-    /// If true, a time set operation clears the device's time below the resolution level.
-    sets_to_zero: bool,
-};
-
-/// File Handle as specified in the EFI Shell Spec
-pub const FileHandle = *opaque {};
-
-test "GUID formatting" {
-    var bytes = [_]u8{ 137, 60, 203, 50, 128, 128, 124, 66, 186, 19, 80, 73, 135, 59, 194, 135 };
-
-    var guid = @as(Guid, @bitCast(bytes));
-
-    var str = try std.fmt.allocPrint(std.testing.allocator, "{}", .{guid});
-    defer std.testing.allocator.free(str);
-
-    try std.testing.expect(std.mem.eql(u8, str, "32cb3c89-8080-427c-ba13-5049873bc287"));
-}
 
 test {
-    _ = tables;
     _ = protocols;
 }

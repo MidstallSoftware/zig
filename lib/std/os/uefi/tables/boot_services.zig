@@ -194,28 +194,27 @@ pub const BootServices = extern struct {
 pub const EfiEventNotify = *const fn (event: Event, ctx: *anyopaque) callconv(.C) void;
 
 pub const TimerDelay = enum(u32) {
-    TimerCancel,
-    TimerPeriodic,
-    TimerRelative,
+    cancel,
+    periodic,
+    relative,
 };
 
 pub const MemoryType = enum(u32) {
-    ReservedMemoryType,
-    LoaderCode,
-    LoaderData,
-    BootServicesCode,
-    BootServicesData,
-    RuntimeServicesCode,
-    RuntimeServicesData,
-    ConventionalMemory,
-    UnusableMemory,
-    ACPIReclaimMemory,
-    ACPIMemoryNVS,
-    MemoryMappedIO,
-    MemoryMappedIOPortSpace,
-    PalCode,
-    PersistentMemory,
-    MaxMemoryType,
+    reserved,
+    loader_code,
+    loader_data,
+    boot_services_code,
+    boot_services_data,
+    runtime_services_code,
+    runtime_services_data,
+    conventional,
+    unusable,
+    acpi_reclaim,
+    acpi_nvs,
+    mmio,
+    mmio_portspace,
+    pal_code,
+    persistent,
     _,
 };
 
@@ -239,6 +238,8 @@ pub const MemoryDescriptorAttribute = packed struct(u64) {
 };
 
 pub const MemoryDescriptor = extern struct {
+    pub const version = 1;
+
     type: MemoryType,
     physical_start: u64,
     virtual_start: u64,
