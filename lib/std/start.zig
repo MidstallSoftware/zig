@@ -232,9 +232,11 @@ fn wasi_start() callconv(.C) void {
     }
 }
 
-fn EfiMain(handle: uefi.Handle, system_table: *uefi.tables.SystemTable) callconv(.C) usize {
+fn EfiMain(handle: uefi.Handle, system_table: *uefi.SystemTable) callconv(.C) usize {
     uefi.handle = handle;
     uefi.system_table = system_table;
+    uefi.boot_services = system_table.boot_services;
+    uefi.runtime_services = system_table.runtime_services;
 
     switch (@typeInfo(@TypeOf(root.main)).Fn.return_type.?) {
         noreturn => {

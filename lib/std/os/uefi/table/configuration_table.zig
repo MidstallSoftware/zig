@@ -94,81 +94,88 @@ pub const ConfigurationTable = extern struct {
         .clock_seq_low = 0x0b,
         .node = [_]u8{ 0xd9, 0x15, 0x2c, 0x69, 0xaa, 0xe0 },
     };
+
+    pub const RtPropertiesTable = extern struct {
+        pub const guid = Guid{
+            .time_low = 0xeb66918a,
+            .time_mid = 0x7eef,
+            .time_high_and_version = 0x402a,
+            .clock_seq_high_and_reserved = 0x84,
+            .clock_seq_low = 0x2e,
+            .node = [_]u8{ 0x93, 0x1d, 0x21, 0xc3, 0x8a, 0xe9 },
+        };
+
+        pub const Services = packed struct(u32) {
+            get_time: bool,
+            set_time: bool,
+            get_wakeup_time: bool,
+            set_wakeup_time: bool,
+            get_variable: bool,
+            get_next_variable_name: bool,
+            set_variable: bool,
+            set_virtual_address_map: bool,
+            convert_pointer: bool,
+            get_next_high_monotonic_count: bool,
+            reset_system: bool,
+            update_capsule: bool,
+            query_capsule_capabilities: bool,
+            _padding: u19,
+        };
+
+        version: u16,
+        length: u16,
+        services_supported: Services,
+    };
+
+    pub const MemoryAttributesTable = extern struct {
+        pub const guid = Guid{
+            .time_low = 0xdcfa911d,
+            .time_mid = 0x26eb,
+            .time_high_and_version = 0x469f,
+            .clock_seq_high_and_reserved = 0xa2,
+            .clock_seq_low = 0x20,
+            .node = [_]u8{ 0x38, 0xb7, 0xdc, 0x46, 0x12, 0x20 },
+        };
+
+        version: u32,
+        number_of_entries: u32,
+        descriptor_size: u32,
+        flags: u32,
+
+        // TODO: descriptor iterator
+    };
+
+    pub const ConformanceProfileTable = extern struct {
+        pub const guid = Guid{
+            .time_low = 0x36122546,
+            .time_mid = 0xf7e7,
+            .time_high_and_version = 0x4c8f,
+            .clock_seq_high_and_reserved = 0xbd,
+            .clock_seq_low = 0x9b,
+            .node = [_]u8{ 0xeb, 0x85, 0x25, 0xb5, 0x0c, 0x0b },
+        };
+
+        version: u16,
+        number_of_profiles: u16,
+
+        // TODO: profile iterator
+
+        pub const profile_uefi_spec = Guid{
+            .time_low = 0x523c91af,
+            .time_mid = 0xa195,
+            .time_high_and_version = 0x4382,
+            .clock_seq_high_and_reserved = 0x81,
+            .clock_seq_low = 0x8d,
+            .node = [_]u8{ 0x29, 0x5f, 0xe4, 0x00, 0x64, 0x65 },
+        };
+    };
+
+    pub const MemoryRangeCapsuleResult = extern struct {
+        pub const guid = uefi.RuntimeServices.MemoryRangeCapsule.guid;
+
+        firmware_memory_requirement: u64,
+        number_of_memory_ranges: u64,
+    };
+
+    // TODO: 4.6.6 Other Configuration Tables
 };
-
-pub const RtPropertiesTable = extern struct {
-    pub const guid = Guid{
-        .time_low = 0xeb66918a,
-        .time_mid = 0x7eef,
-        .time_high_and_version = 0x402a,
-        .clock_seq_high_and_reserved = 0x84,
-        .clock_seq_low = 0x2e,
-        .node = [_]u8{ 0x93, 0x1d, 0x21, 0xc3, 0x8a, 0xe9 },
-    };
-
-    pub const Services = packed struct(u32) {
-        get_time: bool,
-        set_time: bool,
-        get_wakeup_time: bool,
-        set_wakeup_time: bool,
-        get_variable: bool,
-        get_next_variable_name: bool,
-        set_variable: bool,
-        set_virtual_address_map: bool,
-        convert_pointer: bool,
-        get_next_high_monotonic_count: bool,
-        reset_system: bool,
-        update_capsule: bool,
-        query_capsule_capabilities: bool,
-        _padding: u19,
-    };
-
-    version: u16,
-    length: u16,
-    services_supported: Services,
-};
-
-pub const MemoryAttributesTable = extern struct {
-    pub const guid = Guid{
-        .time_low = 0xdcfa911d,
-        .time_mid = 0x26eb,
-        .time_high_and_version = 0x469f,
-        .clock_seq_high_and_reserved = 0xa2,
-        .clock_seq_low = 0x20,
-        .node = [_]u8{ 0x38, 0xb7, 0xdc, 0x46, 0x12, 0x20 },
-    };
-
-    version: u32,
-    number_of_entries: u32,
-    descriptor_size: u32,
-    flags: u32,
-
-    // TODO: descriptor iterator
-};
-
-pub const ConformanceProfileTable = extern struct {
-    pub const guid = Guid{
-        .time_low = 0x36122546,
-        .time_mid = 0xf7e7,
-        .time_high_and_version = 0x4c8f,
-        .clock_seq_high_and_reserved = 0xbd,
-        .clock_seq_low = 0x9b,
-        .node = [_]u8{ 0xeb, 0x85, 0x25, 0xb5, 0x0c, 0x0b },
-    };
-
-    version: u16,
-    number_of_profiles: u16,
-
-    // TODO: profile iterator
-
-    pub const profile_uefi_spec = Guid{
-        .time_low = 0x523c91af,
-        .time_mid = 0xa195,
-        .time_high_and_version = 0x4382,
-        .clock_seq_high_and_reserved = 0x81,
-        .clock_seq_low = 0x8d,
-        .node = [_]u8{ 0x29, 0x5f, 0xe4, 0x00, 0x64, 0x65 },
-    };
-};
-
-// TODO: 4.6.6 Other Configuration Tables

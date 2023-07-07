@@ -19,13 +19,13 @@ const DevicePathProtocol = uefi.protocols.DevicePathProtocol;
 ///
 /// As the boot_services table may grow with new UEFI versions, it is important to check hdr.header_size.
 pub const BootServices = extern struct {
-    hdr: TableHeader,
+    header: TableHeader,
 
     /// Raises a task's priority level and returns its previous level.
-    raiseTpl: *const fn (new_tpl: usize) callconv(.C) usize,
+    _raiseTpl: *const fn (new_tpl: usize) callconv(.C) usize,
 
     /// Restores a task's priority level to its previous value.
-    restoreTpl: *const fn (old_tpl: usize) callconv(.C) void,
+    _restoreTpl: *const fn (old_tpl: usize) callconv(.C) void,
 
     /// Allocates memory pages from the system.
     allocatePages: *const fn (alloc_type: AllocateType, mem_type: MemoryType, pages: usize, memory: *[*]align(4096) u8) callconv(.C) Status,
@@ -43,51 +43,51 @@ pub const BootServices = extern struct {
     freePool: *const fn (buffer: [*]align(8) u8) callconv(.C) Status,
 
     /// Creates an event.
-    createEvent: *const fn (type: u32, notify_tpl: usize, notify_func: ?*const fn (Event, ?*anyopaque) callconv(.C) void, notifyCtx: ?*const anyopaque, event: *Event) callconv(.C) Status,
+    _createEvent: *const fn (type: u32, notify_tpl: usize, notify_func: ?*const fn (Event, ?*anyopaque) callconv(.C) void, notifyCtx: ?*const anyopaque, event: *Event) callconv(.C) Status,
 
     /// Sets the type of timer and the trigger time for a timer event.
-    setTimer: *const fn (event: Event, type: TimerDelay, triggerTime: u64) callconv(.C) Status,
+    _setTimer: *const fn (event: Event, type: TimerDelay, triggerTime: u64) callconv(.C) Status,
 
     /// Stops execution until an event is signaled.
-    waitForEvent: *const fn (event_len: usize, events: [*]const Event, index: *usize) callconv(.C) Status,
+    _waitForEvent: *const fn (event_len: usize, events: [*]const Event, index: *usize) callconv(.C) Status,
 
     /// Signals an event.
-    signalEvent: *const fn (event: Event) callconv(.C) Status,
+    _signalEvent: *const fn (event: Event) callconv(.C) Status,
 
     /// Closes an event.
-    closeEvent: *const fn (event: Event) callconv(.C) Status,
+    _closeEvent: *const fn (event: Event) callconv(.C) Status,
 
     /// Checks whether an event is in the signaled state.
-    checkEvent: *const fn (event: Event) callconv(.C) Status,
+    _checkEvent: *const fn (event: Event) callconv(.C) Status,
 
     /// Installs a protocol interface on a device handle. If the handle does not exist, it is created
     /// and added to the list of handles in the system. installMultipleProtocolInterfaces()
     /// performs more error checking than installProtocolInterface(), so its use is recommended over this.
-    installProtocolInterface: *const fn (handle: Handle, protocol: *align(8) const Guid, interface_type: EfiInterfaceType, interface: *anyopaque) callconv(.C) Status,
+    installProtocolInterface: *const fn (handle: Handle, protocol: *const Guid, interface_type: EfiInterfaceType, interface: *anyopaque) callconv(.C) Status,
 
     /// Reinstalls a protocol interface on a device handle
-    reinstallProtocolInterface: *const fn (handle: Handle, protocol: *align(8) const Guid, old_interface: *anyopaque, new_interface: *anyopaque) callconv(.C) Status,
+    reinstallProtocolInterface: *const fn (handle: Handle, protocol: *const Guid, old_interface: *anyopaque, new_interface: *anyopaque) callconv(.C) Status,
 
     /// Removes a protocol interface from a device handle. Usage of
     /// uninstallMultipleProtocolInterfaces is recommended over this.
-    uninstallProtocolInterface: *const fn (handle: Handle, protocol: *align(8) const Guid, interface: *anyopaque) callconv(.C) Status,
+    uninstallProtocolInterface: *const fn (handle: Handle, protocol: *const Guid, interface: *anyopaque) callconv(.C) Status,
 
     /// Queries a handle to determine if it supports a specified protocol.
-    handleProtocol: *const fn (handle: Handle, protocol: *align(8) const Guid, interface: *?*anyopaque) callconv(.C) Status,
+    handleProtocol: *const fn (handle: Handle, protocol: *const Guid, interface: *?*anyopaque) callconv(.C) Status,
 
     reserved: *anyopaque,
 
     /// Creates an event that is to be signaled whenever an interface is installed for a specified protocol.
-    registerProtocolNotify: *const fn (protocol: *align(8) const Guid, event: Event, registration: **anyopaque) callconv(.C) Status,
+    registerProtocolNotify: *const fn (protocol: *const Guid, event: Event, registration: **anyopaque) callconv(.C) Status,
 
     /// Returns an array of handles that support a specified protocol.
-    locateHandle: *const fn (search_type: LocateSearchType, protocol: ?*align(8) const Guid, search_key: ?*const anyopaque, bufferSize: *usize, buffer: [*]Handle) callconv(.C) Status,
+    locateHandle: *const fn (search_type: LocateSearchType, protocol: ?*const Guid, search_key: ?*const anyopaque, bufferSize: *usize, buffer: [*]Handle) callconv(.C) Status,
 
     /// Locates the handle to a device on the device path that supports the specified protocol
-    locateDevicePath: *const fn (protocols: *align(8) const Guid, device_path: **const DevicePathProtocol, device: *?Handle) callconv(.C) Status,
+    locateDevicePath: *const fn (protocols: *const Guid, device_path: **const DevicePathProtocol, device: *?Handle) callconv(.C) Status,
 
     /// Adds, updates, or removes a configuration table entry from the EFI System Table.
-    installConfigurationTable: *const fn (guid: *align(8) const Guid, table: ?*anyopaque) callconv(.C) Status,
+    installConfigurationTable: *const fn (guid: *const Guid, table: ?*anyopaque) callconv(.C) Status,
 
     /// Loads an EFI image into memory.
     loadImage: *const fn (boot_policy: bool, parent_image_handle: Handle, device_path: ?*const DevicePathProtocol, source_buffer: ?[*]const u8, source_size: usize, imageHandle: *?Handle) callconv(.C) Status,
@@ -120,22 +120,22 @@ pub const BootServices = extern struct {
     disconnectController: *const fn (controller_handle: Handle, driver_image_handle: ?Handle, child_handle: ?Handle) callconv(.C) Status,
 
     /// Queries a handle to determine if it supports a specified protocol.
-    openProtocol: *const fn (handle: Handle, protocol: *align(8) const Guid, interface: *?*anyopaque, agent_handle: ?Handle, controller_handle: ?Handle, attributes: OpenProtocolAttributes) callconv(.C) Status,
+    openProtocol: *const fn (handle: Handle, protocol: *const Guid, interface: *?*anyopaque, agent_handle: ?Handle, controller_handle: ?Handle, attributes: OpenProtocolAttributes) callconv(.C) Status,
 
     /// Closes a protocol on a handle that was opened using openProtocol().
-    closeProtocol: *const fn (handle: Handle, protocol: *align(8) const Guid, agentHandle: Handle, controller_handle: ?Handle) callconv(.C) Status,
+    closeProtocol: *const fn (handle: Handle, protocol: *const Guid, agentHandle: Handle, controller_handle: ?Handle) callconv(.C) Status,
 
     /// Retrieves the list of agents that currently have a protocol interface opened.
-    openProtocolInformation: *const fn (handle: Handle, protocol: *align(8) const Guid, entry_buffer: *[*]ProtocolInformationEntry, entry_count: *usize) callconv(.C) Status,
+    openProtocolInformation: *const fn (handle: Handle, protocol: *const Guid, entry_buffer: *[*]ProtocolInformationEntry, entry_count: *usize) callconv(.C) Status,
 
     /// Retrieves the list of protocol interface GUIDs that are installed on a handle in a buffer allocated from pool.
-    protocolsPerHandle: *const fn (handle: Handle, protocol_buffer: *[*]*align(8) const Guid, protocol_buffer_count: *usize) callconv(.C) Status,
+    protocolsPerHandle: *const fn (handle: Handle, protocol_buffer: *[*]*const Guid, protocol_buffer_count: *usize) callconv(.C) Status,
 
     /// Returns an array of handles that support the requested protocol in a buffer allocated from pool.
-    locateHandleBuffer: *const fn (search_type: LocateSearchType, protocol: ?*align(8) const Guid, search_key: ?*const anyopaque, num_handles: *usize, buffer: *[*]Handle) callconv(.C) Status,
+    locateHandleBuffer: *const fn (search_type: LocateSearchType, protocol: ?*const Guid, search_key: ?*const anyopaque, num_handles: *usize, buffer: *[*]Handle) callconv(.C) Status,
 
     /// Returns the first protocol instance that matches the given protocol.
-    locateProtocol: *const fn (protocol: *align(8) const Guid, registration: ?*const anyopaque, interface: *?*anyopaque) callconv(.C) Status,
+    locateProtocol: *const fn (protocol: *const Guid, registration: ?*const anyopaque, interface: *?*anyopaque) callconv(.C) Status,
 
     /// Installs one or more protocol interfaces into the boot services environment
     installMultipleProtocolInterfaces: *const fn (handle: *Handle, ...) callconv(.C) Status,
@@ -153,7 +153,16 @@ pub const BootServices = extern struct {
     setMem: *const fn (buffer: [*]u8, size: usize, value: u8) callconv(.C) void,
 
     /// Creates an event in a group.
-    createEventEx: *const fn (type: u32, notify_tpl: usize, notify_func: EfiEventNotify, notify_ctx: *const anyopaque, event_group: *align(8) const Guid, event: *Event) callconv(.C) Status,
+    _createEventEx: *const fn (type: u32, notify_tpl: usize, notify_func: EfiEventNotify, notify_ctx: *anyopaque, event_group: *const Guid, event: *Event) callconv(.C) Status,
+
+    pub fn createEvent(this: *const BootServices, kind: EventType, notify_tpl: usize, notify_func: ?EfiEventNotify, notify_ctx: ?*anyopaque, event_group: ?*const Guid) !Event {
+        var event: Event = undefined;
+        if (this.header.isAtLeast(2, 0, 0)) switch (this._createEvent(kind, notify_tpl, notify_func, notify_ctx, &event)) {
+            
+        };
+
+        switch (this._createEventEx(kind, notify_tpl, notify_func, notify_ctx, event_group, &event)) {}
+    }
 
     /// Opens a protocol with a structure as the loaded image for a UEFI application
     pub fn openProtocolSt(self: *BootServices, comptime protocol: type, handle: Handle) !*protocol {
@@ -177,6 +186,18 @@ pub const BootServices = extern struct {
     }
 
     pub const signature: u64 = 0x56524553544f4f42;
+
+    pub const EventType = packed struct(u32) {
+        _: u8 = 0,
+        notify_wait: bool = false,
+        notify_signal: bool = false,
+        _: u18 = 0,
+        runtime: bool = false,
+        timer: bool = false,
+
+        pub const exit_boot_services: EventType = @bitCast(0x00000201);
+        pub const virtual_address_change: EventType = @bitCast(0x60000202);
+    };
 
     pub const event_timer: u32 = 0x80000000;
     pub const event_runtime: u32 = 0x40000000;

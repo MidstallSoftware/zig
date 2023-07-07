@@ -31,7 +31,7 @@ pub const RuntimeServices = extern struct {
     _getNextHighMonotonicCount: *const fn (high_count: *u32) callconv(.C) Status,
     _resetSystem: *const fn (reset_type: ResetType, reset_status: Status, data_size: usize, reset_data: ?*const anyopaque) callconv(.C) noreturn,
 
-    _updateCapsule: *const fn (capsule_header_array: *const *CapsuleHeader, capsule_count: usize, scatter_gather_list: uefi.EfiPhysicalAddress) callconv(.C) Status,
+    _updateCapsule: *const fn (capsule_header_array: *const *CapsuleHeader, capsule_count: usize, scatter_gather_list: uefi.PhysicalAddress) callconv(.C) Status,
     _queryCapsuleCapabilities: *const fn (capsule_header_array: *const *CapsuleHeader, capsule_count: usize, maximum_capsule_size: *usize, resetType: ResetType) callconv(.C) Status,
 
     _queryVariableInfo: *const fn (attributes: *u32, maximum_variable_storage_size: *u64, remaining_variable_storage_size: *u64, maximum_variable_size: *u64) callconv(.C) Status,
@@ -237,7 +237,7 @@ pub const RuntimeServices = extern struct {
         }
     }
 
-    pub fn updateCapsule(this: *const RuntimeServices, capsules: []CapsuleHeader, scatter_gather_list: uefi.EfiPhysicalMemory) !void {
+    pub fn updateCapsule(this: *const RuntimeServices, capsules: []CapsuleHeader, scatter_gather_list: uefi.PhysicalAddress) !void {
         if (!this.header.isAtLeast(2, 0, 0)) return error.Unsupported;
 
         switch (this._updateCapsule(&capsules.ptr, capsules.len, scatter_gather_list)) {
@@ -262,111 +262,78 @@ pub const RuntimeServices = extern struct {
             else => return error.Unexpected,
         }
     }
-};
 
-/// This structure represents time information.
-pub const Time = extern struct {
-    pub const DaylightSavings = packed struct(u8) {
-        /// If true, the time is affected by daylight savings time.
-        adjust_daylight: bool = false,
-
-        /// If true, the time has been adjusted for daylight savings time.
-        in_daylight: bool = false,
-
-        _padding: u6 = 0,
+    pub const VariableAttributes = packed struct(u32) {
+        non_volatile: bool = false,
+        boot_service_access: bool = false,
+        runtime_access: bool = false,
+        hardware_error_record: bool = false,
+        authenticated_write_access: bool = false, // Deprecated
+        time_based_authenticated_write_access: bool = false,
+        append_write: bool = false,
+        enhanced_authenticated_access: bool = false,
+        _padding: u24 = 0,
     };
 
-    /// 1900 - 9999
-    year: u16,
+    pub const ResetType = enum(u32) {
+        cold,
+        warm,
+        shutdown,
+        platform_specific,
+    };
 
-    /// 1 - 12
-    month: u8,
+    pub const CapsuleHeader = extern struct {
+        pub const Flags = packed struct(u32) {
+            guid_specific: u16,
+            persist_across_reset: bool = false,
+            populate_system_table: bool = false,
+            initiate_reset: bool = false, // If this is true, `persist_across_reset` must also be true.
+            _padding: u13 = 0,
+        };
 
-    /// 1 - 31
-    day: u8,
+        guid: Guid,
+        size: u32,
+        flags: Flags,
+        image_size: u32,
+    };
 
-    /// 0 - 23
-    hour: u8,
+    pub const CapsuleBlockDescriptor = extern struct {
+        length: u64,
+        address: extern union {
+            data: uefi.PhysicalAddress,
+            continuation: uefi.PhysicalAddress,
+        },
+    };
 
-    /// 0 - 59
-    minute: u8,
+    pub const MemoryRangeCapsule = extern struct {
+        pub const MemoryRange = extern struct {
+            address: uefi.PhysicalAddress,
+            length: u64,
+        };
 
-    /// 0 - 59
-    second: u8,
+        pub const guid = Guid{
+            .time_low = 0xde9f0ec,
+            .time_mid = 0x88b6,
+            .time_high_and_version = 0x428f,
+            .clock_seq_high_and_reserved = 0x97,
+            .clock_seq_low = 0x7a,
+            .node = [_]u8{ 0x25, 0x8f, 0x1d, 0xe, 0x5e, 0x72 },
+        };
 
-    /// 0 - 999999999
-    nanosecond: u32 = 0,
+        header: CapsuleHeader,
+        requested_memory_type: u32,
+        number_of_memory_ranges: u32,
+        // memory ranges appended here
 
-    /// The time's offset in minutes from UTC.
-    /// Allowed values are -1440 to 1440 or unspecified_timezone
-    timezone: i16 = unspecified_timezone,
+        // TODO: memory range iterator
+    };
 
-    /// A bitmask containing the daylight savings time information for the time.
-    daylight: DaylightSavings = .{},
-
-    /// Time is to be interpreted as local time
-    pub const unspecified_timezone: i16 = 0x7ff;
-};
-
-/// Capabilities of the clock device
-pub const TimeCapabilities = extern struct {
-    /// Resolution in Hz
-    resolution: u32,
-
-    /// Accuracy in an error rate of 1e-6 parts per million.
-    accuracy: u32,
-
-    /// If true, a time set operation clears the device's time below the resolution level.
-    sets_to_zero: bool,
-};
-
-pub const VariableAttributes = packed struct(u32) {
-    non_volatile: bool = false,
-    boot_service_access: bool = false,
-    runtime_access: bool = false,
-    hardware_error_record: bool = false,
-    authenticated_write_access: bool = false, // Deprecated
-    time_based_authenticated_write_access: bool = false,
-    append_write: bool = false,
-    enhanced_authenticated_access: bool = false,
-    _padding: u24 = 0,
-};
-
-pub const ResetType = enum(u32) {
-    cold,
-    warm,
-    shutdown,
-    platform_specific,
-};
-
-pub const CapsuleFlags = packed struct(u32) {
-    guid_specific: u16,
-    persist_across_reset: bool = false,
-    populate_system_table: bool = false,
-    initiate_reset: bool = false, // If this is true, `persist_across_reset` must also be true.
-    _padding: u13 = 0,
-};
-
-pub const CapsuleHeader = extern struct {
-    guid: Guid,
-    size: u32,
-    flags: u32,
-    image_size: u32,
-};
-
-pub const UefiCapsuleBlockDescriptor = extern struct {
-    length: u64,
-    address: extern union {
-        dataBlock: uefi.EfiPhysicalAddress,
-        continuationPointer: uefi.EfiPhysicalAddress,
-    },
-};
-
-pub const global_variable align(8) = Guid{
-    .time_low = 0x8be4df61,
-    .time_mid = 0x93ca,
-    .time_high_and_version = 0x11d2,
-    .clock_seq_high_and_reserved = 0xaa,
-    .clock_seq_low = 0x0d,
-    .node = [_]u8{ 0x00, 0xe0, 0x98, 0x03, 0x2b, 0x8c },
+    pub const global_variable align(8) = Guid{
+        .time_low = 0x8be4df61,
+        .time_mid = 0x93ca,
+        .time_high_and_version = 0x11d2,
+        .clock_seq_high_and_reserved = 0xaa,
+        .clock_seq_low = 0x0d,
+        .node = [_]u8{ 0x00, 0xe0, 0x98, 0x03, 0x2b, 0x8c },
+    };
 };

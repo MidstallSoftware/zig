@@ -1,13 +1,12 @@
 const std = @import("../std.zig");
 
 /// A protocol is an interface identified by a GUID.
-pub const protocols = @import("uefi/protocols.zig");
+pub const protocol = @import("uefi/protocol.zig");
 
-const tables = @import("uefi/tables.zig");
-pub const SystemTable = tables.SystemTable;
-pub const BootServices = tables.BootServices;
-pub const RuntimeServices = tables.RuntimeServices;
-pub const ConfigurationTable = tables.ConfigurationTable;
+pub const SystemTable = @import("uefi/table/system_table.zig").SystemTable;
+pub const BootServices = @import("uefi/table/boot_services.zig").BootServices;
+pub const RuntimeServices = @import("uefi/table/runtime_services.zig").RuntimeServices;
+pub const ConfigurationTable = @import("uefi/table/configuration_table.zig").ConfigurationTable;
 
 /// Status codes returned by EFI interfaces
 pub const Status = @import("uefi/status.zig").Status;
@@ -23,7 +22,9 @@ pub const raw_pool_allocator = @import("uefi/pool_allocator.zig").raw_pool_alloc
 pub var handle: Handle = undefined;
 
 /// A pointer to the EFI System Table that is passed to the EFI image's entry point.
-pub var system_table: *tables.SystemTable = undefined;
+pub var system_table: *SystemTable = undefined;
+pub var boot_services: ?*BootServices = undefined;
+pub var runtime_services: *RuntimeServices = undefined;
 
 /// A handle to an event structure.
 pub const Event = *opaque {};
@@ -34,19 +35,7 @@ pub const Handle = *opaque {};
 /// File Handle as specified in the EFI Shell Spec
 pub const FileHandle = *opaque {};
 
-pub const MacAddress = extern struct {
-    address: [32]u8,
-};
-
-pub const Ipv4Address = extern struct {
-    address: [4]u8,
-};
-
-pub const Ipv6Address = extern struct {
-    address: [16]u8,
-};
-
-pub const EfiPhysicalAddress = u64;
+pub const PhysicalAddress = u64;
 
 /// GUIDs are align(8) unless otherwise specified.
 pub const Guid = extern struct {
@@ -145,5 +134,4 @@ pub const TableHeader = extern struct {
 };
 
 test {
-    _ = protocols;
 }
