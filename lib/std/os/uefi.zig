@@ -3,6 +3,15 @@ const std = @import("../std.zig");
 /// A protocol is an interface identified by a GUID.
 pub const protocol = @import("uefi/protocol.zig");
 
+pub const Protocol = struct {
+    pub const LoadedImage = @import("Protocol/LoadedImage.zig");
+
+    pub const DevicePath = @import("Protocol/DevicePath.zig");
+    pub const DevicePathToText = @import("Protocol/DevicePathToText.zig");
+    pub const DevicePathFromText = @import("Protocol/DevicePathFromText.zig");
+    pub const DevicePathUtilities = @import("Protocol/DevicePathUtilities.zig");
+};
+
 pub const SystemTable = @import("uefi/table/system_table.zig").SystemTable;
 pub const BootServices = @import("uefi/table/boot_services.zig").BootServices;
 pub const RuntimeServices = @import("uefi/table/runtime_services.zig").RuntimeServices;
@@ -14,7 +23,7 @@ pub const Status = @import("uefi/status.zig").Status;
 /// The memory type to allocate when using the pool
 /// Defaults to .LoaderData, the default data allocation type
 /// used by UEFI applications to allocate pool memory.
-pub var efi_pool_memory_type: tables.MemoryType = .LoaderData;
+pub var efi_pool_memory_type: BootServices.MemoryType = .LoaderData;
 pub const pool_allocator = @import("uefi/pool_allocator.zig").pool_allocator;
 pub const raw_pool_allocator = @import("uefi/pool_allocator.zig").raw_pool_allocator;
 
@@ -133,5 +142,4 @@ pub const TableHeader = extern struct {
     }
 };
 
-test {
-}
+test {}
