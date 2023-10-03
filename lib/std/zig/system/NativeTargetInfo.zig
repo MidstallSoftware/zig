@@ -644,6 +644,7 @@ pub fn abiAndDynamicLinkerFromFile(
             .os = os,
             .abi = cross_target.abi orelse Target.Abi.default(cpu.arch, os),
             .ofmt = cross_target.ofmt orelse Target.ObjectFormat.default(os.tag, cpu.arch),
+            .page_size = cross_target.page_size,
         },
         .dynamic_linker = cross_target.dynamic_linker,
     };
@@ -921,6 +922,7 @@ fn defaultAbiAndDynamicLinker(cpu: Target.Cpu, os: Target.Os, cross_target: Cros
         .os = os,
         .abi = cross_target.abi orelse Target.Abi.default(cpu.arch, os),
         .ofmt = cross_target.ofmt orelse Target.ObjectFormat.default(os.tag, cpu.arch),
+        .page_size = cross_target.page_size,
     };
     return NativeTargetInfo{
         .target = target,

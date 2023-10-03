@@ -8,6 +8,7 @@ pub const Target = struct {
     os: Os,
     abi: Abi,
     ofmt: ObjectFormat,
+    page_size: ?usize = null,
 
     pub const Os = struct {
         tag: Tag,

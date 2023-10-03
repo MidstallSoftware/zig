@@ -10,9 +10,20 @@ const testing = std.testing;
 const Endian = std.builtin.Endian;
 const native_endian = builtin.cpu.arch.endian();
 
+/// Runtime known minimum page size.
+/// If the page size cannot be determined at runtime,
+/// it will use the comptime known one.
+pub fn getPageSize() usize {
+    return switch (builtin.os.tag) {
+        .linux => if (builtin.link_libc) @intCast(std.c.sysconf(30))
+            else std.os.linux.getauxval(std.elf.AT_PAGESZ),
+        else => page_size
+    };
+}
+
 /// Compile time known minimum page size.
 /// https://github.com/ziglang/zig/issues/4082
-pub const page_size = switch (builtin.cpu.arch) {
+pub const page_size = builtin.target.page_size orelse switch (builtin.cpu.arch) {
     .wasm32, .wasm64 => 64 * 1024,
     .aarch64 => switch (builtin.os.tag) {
         .macos, .ios, .watchos, .tvos => 16 * 1024,

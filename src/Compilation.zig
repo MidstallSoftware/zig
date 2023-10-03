@@ -6251,6 +6251,7 @@ pub fn generateBuiltinZigSource(comp: *Compilation, allocator: Allocator) Alloca
         \\    .os = os,
         \\    .abi = abi,
         \\    .ofmt = object_format,
+        \\    .page_size = {},
         \\}};
         \\pub const object_format = std.Target.ObjectFormat.{};
         \\pub const mode = std.builtin.OptimizeMode.{};
@@ -6266,6 +6267,7 @@ pub fn generateBuiltinZigSource(comp: *Compilation, allocator: Allocator) Alloca
         \\pub const omit_frame_pointer = {};
         \\
     , .{
+        target.page_size orelse std.mem.getPageSize(),
         std.zig.fmtId(@tagName(target.ofmt)),
         std.zig.fmtId(@tagName(comp.bin_file.options.optimize_mode)),
         link_libc,
