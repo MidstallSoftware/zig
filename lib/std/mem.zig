@@ -15,9 +15,8 @@ const native_endian = builtin.cpu.arch.endian();
 /// it will use the comptime known one.
 pub fn getPageSize() usize {
     return switch (builtin.os.tag) {
-        .linux => if (builtin.link_libc) @intCast(std.c.sysconf(30))
-            else std.os.linux.getauxval(std.elf.AT_PAGESZ),
-        else => page_size
+        .linux => if (builtin.link_libc) @intCast(std.c.sysconf(30)) else std.os.linux.getauxval(std.elf.AT_PAGESZ),
+        else => page_size,
     };
 }
 
