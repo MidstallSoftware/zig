@@ -1201,6 +1201,7 @@ fn unzip(f: *Fetch, out_dir: fs.Dir, reader: anytype) RunError!UnpackResult {
     // load into memory.
 
     const cache_root = f.job_queue.global_cache;
+    const arena = f.arena.allocator();
 
     // TODO: the downside of this solution is if we get a failure/crash/oom/power out
     //       during this process, we leave behind a zip file that would be
@@ -1242,9 +1243,10 @@ fn unzip(f: *Fetch, out_dir: fs.Dir, reader: anytype) RunError!UnpackResult {
             .{@errorName(err)},
         ));
         defer zip_file.close();
-        var buf: [std.mem.page_size]u8 = undefined;
+        var buf = try arena.alloc(u8, std.heap.pageSize());
+        defer arena.free(buf);
         while (true) {
-            const len = reader.readAll(&buf) catch |err| return f.fail(f.location_tok, try eb.printString(
+            const len = reader.readAll(buf) catch |err| return f.fail(f.location_tok, try eb.printString(
                 "read zip stream failed: {s}",
                 .{@errorName(err)},
             ));

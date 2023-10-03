@@ -99,11 +99,13 @@ const math = std.math;
 const assert = std.debug.assert;
 const mem = std.mem;
 const Allocator = std.mem.Allocator;
-const page_size = std.mem.page_size;
 const StackTrace = std.builtin.StackTrace;
 
-/// Integer type for pointing to slots in a small allocation
-const SlotIndex = std.meta.Int(.unsigned, math.log2(page_size) + 1);
+// Maximum possible hardware page size
+const max_page_size: comptime_int = math.powi(std.meta.Int(.unsigned, @bitSizeOf(usize) * 2), 2, @bitSizeOf(usize)) catch unreachable;
+
+/// Integer type for pointing to slots in a small allocation.
+const SlotIndex = std.meta.Int(.unsigned, math.log2(max_page_size + 1));
 
 const default_test_stack_trace_frames: usize = if (builtin.is_test) 10 else 6;
 const default_sys_stack_trace_frames: usize = if (std.debug.sys_can_stack_trace) default_test_stack_trace_frames else 0;
@@ -160,12 +162,14 @@ pub const Check = enum { ok, leak };
 pub fn GeneralPurposeAllocator(comptime config: Config) type {
     return struct {
         backing_allocator: Allocator = std.heap.page_allocator,
-        buckets: [small_bucket_count]Buckets = [1]Buckets{Buckets{}} ** small_bucket_count,
-        cur_buckets: [small_bucket_count]?*BucketHeader = [1]?*BucketHeader{null} ** small_bucket_count,
+        buckets: []Buckets = undefined,
+        cur_buckets: []?*BucketHeader = undefined,
         large_allocations: LargeAllocTable = .{},
         empty_buckets: if (config.retain_metadata) Buckets else void =
             if (config.retain_metadata) Buckets{} else {},
         bucket_node_pool: std.heap.MemoryPool(Buckets.Node) = std.heap.MemoryPool(Buckets.Node).init(std.heap.page_allocator),
+        small_bucket_count: usize = 0,
+        largest_bucket_object_size: usize = 0,
 
         total_requested_bytes: @TypeOf(total_requested_bytes_init) = total_requested_bytes_init,
         requested_memory_limit: @TypeOf(requested_memory_limit_init) = requested_memory_limit_init,
@@ -195,9 +199,7 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
 
         pub const Error = mem.Allocator.Error;
 
-        const small_bucket_count = math.log2(page_size);
-        const largest_bucket_object_size = 1 << (small_bucket_count - 1);
-        const LargestSizeClassInt = std.math.IntFittingRange(0, largest_bucket_object_size);
+        const LargestSizeClassInt = std.math.IntFittingRange(0, 1 << (math.log2(max_page_size - 1)));
 
         const bucketCompare = struct {
             fn compare(a: *BucketHeader, b: *BucketHeader) std.math.Order {
@@ -250,7 +252,7 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
         // * stack_trace_addresses: [N]usize, // traces_per_slot for every allocation
 
         const BucketHeader = struct {
-            page: [*]align(page_size) u8,
+            page: [*]u8,
             alloc_cursor: SlotIndex,
             used_count: SlotIndex,
 
@@ -262,14 +264,14 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
                 if (!config.safety) @compileError("requested size is only stored when safety is enabled");
                 const start_ptr = @as([*]u8, @ptrCast(bucket)) + bucketRequestedSizesStart(size_class);
                 const sizes = @as([*]LargestSizeClassInt, @ptrCast(@alignCast(start_ptr)));
-                const slot_count = @divExact(page_size, size_class);
+                const slot_count = @divExact(std.heap.pageSize(), size_class);
                 return sizes[0..slot_count];
             }
 
             fn log2PtrAligns(bucket: *BucketHeader, size_class: usize) []u8 {
                 if (!config.safety) @compileError("requested size is only stored when safety is enabled");
                 const aligns_ptr = @as([*]u8, @ptrCast(bucket)) + bucketAlignsStart(size_class);
-                const slot_count = @divExact(page_size, size_class);
+                const slot_count = @divExact(std.heap.pageSize(), size_class);
                 return aligns_ptr[0..slot_count];
             }
 
@@ -301,7 +303,7 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
             /// Only valid for buckets within `empty_buckets`, and relies on the `alloc_cursor`
             /// of empty buckets being set to `slot_count` when they are added to `empty_buckets`
             fn emptyBucketSizeClass(bucket: *BucketHeader) usize {
-                return @divExact(page_size, bucket.alloc_cursor);
+                return @divExact(std.heap.pageSize(), bucket.alloc_cursor);
             }
         };
 
@@ -344,13 +346,13 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
 
         fn bucketAlignsStart(size_class: usize) usize {
             if (!config.safety) @compileError("requested sizes are not stored unless safety is enabled");
-            const slot_count = @divExact(page_size, size_class);
+            const slot_count = @divExact(std.heap.pageSize(), size_class);
             return bucketRequestedSizesStart(size_class) + (@sizeOf(LargestSizeClassInt) * slot_count);
         }
 
         fn bucketStackFramesStart(size_class: usize) usize {
             const unaligned_start = if (config.safety) blk: {
-                const slot_count = @divExact(page_size, size_class);
+                const slot_count = @divExact(std.heap.pageSize(), size_class);
                 break :blk bucketAlignsStart(size_class) + slot_count;
             } else @sizeOf(BucketHeader) + usedBitsCount(size_class);
             return mem.alignForward(
@@ -361,12 +363,12 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
         }
 
         fn bucketSize(size_class: usize) usize {
-            const slot_count = @divExact(page_size, size_class);
+            const slot_count = @divExact(std.heap.pageSize(), size_class);
             return bucketStackFramesStart(size_class) + one_trace_size * traces_per_slot * slot_count;
         }
 
         fn usedBitsCount(size_class: usize) usize {
-            const slot_count = @divExact(page_size, size_class);
+            const slot_count = @divExact(std.heap.pageSize(), size_class);
             if (slot_count < 8) return 1;
             return @divExact(slot_count, 8);
         }
@@ -403,9 +405,11 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
 
         /// Emits log messages for leaks and then returns whether there were any leaks.
         pub fn detectLeaks(self: *Self) bool {
+            self.ensureInitialized() catch return false;
+
             var leaks = false;
 
-            for (&self.buckets, 0..) |*buckets, bucket_i| {
+            for (self.buckets, 0..) |*buckets, bucket_i| {
                 if (buckets.root == null) continue;
                 const size_class = @as(usize, 1) << @as(math.Log2Int(usize), @intCast(bucket_i));
                 const used_bits_count = usedBitsCount(size_class);
@@ -453,7 +457,7 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
                     var bucket = node.key;
                     if (config.never_unmap) {
                         // free page that was intentionally leaked by never_unmap
-                        self.backing_allocator.free(bucket.page[0..page_size]);
+                        self.backing_allocator.free(bucket.page[0..std.heap.pageSize()]);
                     }
                     // alloc_cursor was set to slot count when bucket added to empty_buckets
                     self.freeBucket(bucket, bucket.emptyBucketSizeClass());
@@ -477,14 +481,33 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
             }
         }
 
+        fn ensureInitialized(self: *Self) !void {
+            if (self.small_bucket_count == 0 or self.largest_bucket_object_size == 0) {
+                const pageSize = std.heap.pageSize();
+
+                self.small_bucket_count = math.log2(pageSize);
+                self.largest_bucket_object_size = @as(usize, 1) << @intCast(self.small_bucket_count - 1);
+
+                self.buckets = try self.backing_allocator.alloc(Buckets, self.small_bucket_count);
+                @memset(self.buckets, Buckets{});
+
+                self.cur_buckets = try self.backing_allocator.alloc(?*BucketHeader, self.small_bucket_count);
+                @memset(self.cur_buckets, null);
+            }
+        }
+
         /// Returns `Check.leak` if there were leaks; `Check.ok` otherwise.
         pub fn deinit(self: *Self) Check {
+            self.ensureInitialized() catch unreachable;
+
             const leaks = if (config.safety) self.detectLeaks() else false;
             if (config.retain_metadata) {
                 self.freeRetainedMetadata();
             }
             self.large_allocations.deinit(self.backing_allocator);
             self.bucket_node_pool.deinit();
+            self.backing_allocator.free(self.buckets);
+            self.backing_allocator.free(self.cur_buckets);
             self.* = undefined;
             return @as(Check, @enumFromInt(@intFromBool(leaks)));
         }
@@ -518,9 +541,11 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
         };
 
         fn allocSlot(self: *Self, size_class: usize, trace_addr: usize) Error!Slot {
+            try self.ensureInitialized();
+
             const bucket_index = math.log2(size_class);
             var buckets = &self.buckets[bucket_index];
-            const slot_count = @divExact(page_size, size_class);
+            const slot_count = @divExact(std.heap.pageSize(), size_class);
             if (self.cur_buckets[bucket_index] == null or self.cur_buckets[bucket_index].?.alloc_cursor == slot_count) {
                 const new_bucket = try self.createBucket(size_class);
                 errdefer self.freeBucket(new_bucket, size_class);
@@ -553,7 +578,7 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
             addr: usize,
             current_bucket: ?*BucketHeader,
         ) ?*BucketHeader {
-            const search_page: [*]align(page_size) u8 = @ptrFromInt(mem.alignBackward(usize, addr, page_size));
+            const search_page: [*]u8 = @ptrFromInt(mem.alignBackward(usize, addr, std.heap.pageSize()));
             if (current_bucket != null and current_bucket.?.page == search_page) {
                 return current_bucket;
             }
@@ -715,17 +740,18 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
             self.mutex.lock();
             defer self.mutex.unlock();
 
+            self.ensureInitialized() catch return false;
             assert(old_mem.len != 0);
 
             const aligned_size = @max(old_mem.len, @as(usize, 1) << log2_old_align);
-            if (aligned_size > largest_bucket_object_size) {
+            if (aligned_size > self.largest_bucket_object_size) {
                 return self.resizeLarge(old_mem, log2_old_align, new_size, ret_addr);
             }
             const size_class_hint = math.ceilPowerOfTwoAssert(usize, aligned_size);
 
             var bucket_index = math.log2(size_class_hint);
             var size_class: usize = size_class_hint;
-            const bucket = while (bucket_index < small_bucket_count) : (bucket_index += 1) {
+            const bucket = while (bucket_index < self.small_bucket_count) : (bucket_index += 1) {
                 if (searchBucket(&self.buckets[bucket_index], @intFromPtr(old_mem.ptr), self.cur_buckets[bucket_index])) |bucket| {
                     break bucket;
                 }
@@ -833,10 +859,11 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
             self.mutex.lock();
             defer self.mutex.unlock();
 
+            self.ensureInitialized() catch unreachable;
             assert(old_mem.len != 0);
 
             const aligned_size = @max(old_mem.len, @as(usize, 1) << log2_old_align);
-            if (aligned_size > largest_bucket_object_size) {
+            if (aligned_size > self.largest_bucket_object_size) {
                 self.freeLarge(old_mem, log2_old_align, ret_addr);
                 return;
             }
@@ -844,7 +871,7 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
 
             var bucket_index = math.log2(size_class_hint);
             var size_class: usize = size_class_hint;
-            const bucket = while (bucket_index < small_bucket_count) : (bucket_index += 1) {
+            const bucket = while (bucket_index < self.small_bucket_count) : (bucket_index += 1) {
                 if (searchBucket(&self.buckets[bucket_index], @intFromPtr(old_mem.ptr), self.cur_buckets[bucket_index])) |bucket| {
                     break bucket;
                 }
@@ -933,14 +960,14 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
                     self.cur_buckets[bucket_index] = null;
                 }
                 if (!config.never_unmap) {
-                    self.backing_allocator.free(bucket.page[0..page_size]);
+                    self.backing_allocator.free(bucket.page[0..std.heap.pageSize()]);
                 }
                 if (!config.retain_metadata) {
                     self.freeBucket(bucket, size_class);
                     self.bucket_node_pool.destroy(node);
                 } else {
                     // move alloc_cursor to end so we can tell size_class later
-                    const slot_count = @divExact(page_size, size_class);
+                    const slot_count = @divExact(std.heap.pageSize(), size_class);
                     bucket.alloc_cursor = @as(SlotIndex, @truncate(slot_count));
                     var empty_entry = self.empty_buckets.getEntryFor(node.key);
                     empty_entry.set(node);
@@ -970,6 +997,7 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
             const self: *Self = @ptrCast(@alignCast(ctx));
             self.mutex.lock();
             defer self.mutex.unlock();
+            self.ensureInitialized() catch return null;
             if (!self.isAllocationAllowed(len)) return null;
             return allocInner(self, len, @as(Allocator.Log2Align, @intCast(log2_ptr_align)), ret_addr) catch return null;
         }
@@ -980,8 +1008,10 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
             log2_ptr_align: Allocator.Log2Align,
             ret_addr: usize,
         ) Allocator.Error![*]u8 {
+            try self.ensureInitialized();
+
             const new_aligned_size = @max(len, @as(usize, 1) << @as(Allocator.Log2Align, @intCast(log2_ptr_align)));
-            if (new_aligned_size > largest_bucket_object_size) {
+            if (new_aligned_size > self.largest_bucket_object_size) {
                 try self.large_allocations.ensureUnusedCapacity(self.backing_allocator, 1);
                 const ptr = self.backing_allocator.rawAlloc(len, log2_ptr_align, ret_addr) orelse
                     return error.OutOfMemory;
@@ -1024,8 +1054,10 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
         }
 
         fn createBucket(self: *Self, size_class: usize) Error!*BucketHeader {
-            const page = try self.backing_allocator.alignedAlloc(u8, page_size, page_size);
+            const page = try self.backing_allocator.alignedAlloc(u8, 1, std.heap.pageSize());
             errdefer self.backing_allocator.free(page);
+
+            try self.ensureInitialized();
 
             const bucket_size = bucketSize(size_class);
             const bucket_bytes = try self.backing_allocator.alignedAlloc(u8, @alignOf(BucketHeader), bucket_size);
@@ -1164,17 +1196,17 @@ test "large object - grow" {
     defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
     const allocator = gpa.allocator();
 
-    var slice1 = try allocator.alloc(u8, page_size * 2 - 20);
+    var slice1 = try allocator.alloc(u8, std.heap.pageSize() * 2 - 20);
     defer allocator.free(slice1);
 
     const old = slice1;
-    slice1 = try allocator.realloc(slice1, page_size * 2 - 10);
+    slice1 = try allocator.realloc(slice1, std.heap.pageSize() * 2 - 10);
     try std.testing.expect(slice1.ptr == old.ptr);
 
-    slice1 = try allocator.realloc(slice1, page_size * 2);
+    slice1 = try allocator.realloc(slice1, std.heap.pageSize() * 2);
     try std.testing.expect(slice1.ptr == old.ptr);
 
-    slice1 = try allocator.realloc(slice1, page_size * 2 + 1);
+    slice1 = try allocator.realloc(slice1, std.heap.pageSize() * 2 + 1);
 }
 
 test "realloc small object to large object" {
@@ -1188,7 +1220,7 @@ test "realloc small object to large object" {
     slice[60] = 0x34;
 
     // This requires upgrading to a large object
-    const large_object_size = page_size * 2 + 50;
+    const large_object_size = std.heap.pageSize() * 2 + 50;
     slice = try allocator.realloc(slice, large_object_size);
     try std.testing.expect(slice[0] == 0x12);
     try std.testing.expect(slice[60] == 0x34);
@@ -1199,22 +1231,22 @@ test "shrink large object to large object" {
     defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
     const allocator = gpa.allocator();
 
-    var slice = try allocator.alloc(u8, page_size * 2 + 50);
+    var slice = try allocator.alloc(u8, std.heap.pageSize() * 2 + 50);
     defer allocator.free(slice);
     slice[0] = 0x12;
     slice[60] = 0x34;
 
-    if (!allocator.resize(slice, page_size * 2 + 1)) return;
-    slice = slice.ptr[0 .. page_size * 2 + 1];
+    if (!allocator.resize(slice, std.heap.pageSize() * 2 + 1)) return;
+    slice = slice.ptr[0 .. std.heap.pageSize() * 2 + 1];
     try std.testing.expect(slice[0] == 0x12);
     try std.testing.expect(slice[60] == 0x34);
 
-    try std.testing.expect(allocator.resize(slice, page_size * 2 + 1));
-    slice = slice[0 .. page_size * 2 + 1];
+    try std.testing.expect(allocator.resize(slice, std.heap.pageSize() * 2 + 1));
+    slice = slice[0 .. std.heap.pageSize() * 2 + 1];
     try std.testing.expect(slice[0] == 0x12);
     try std.testing.expect(slice[60] == 0x34);
 
-    slice = try allocator.realloc(slice, page_size * 2);
+    slice = try allocator.realloc(slice, std.heap.pageSize() * 2);
     try std.testing.expect(slice[0] == 0x12);
     try std.testing.expect(slice[60] == 0x34);
 }
@@ -1228,13 +1260,13 @@ test "shrink large object to large object with larger alignment" {
     var fba = std.heap.FixedBufferAllocator.init(&debug_buffer);
     const debug_allocator = fba.allocator();
 
-    const alloc_size = page_size * 2 + 50;
+    const alloc_size = std.heap.pageSize() * 2 + 50;
     var slice = try allocator.alignedAlloc(u8, 16, alloc_size);
     defer allocator.free(slice);
 
     const big_alignment: usize = switch (builtin.os.tag) {
-        .windows => page_size * 32, // Windows aligns to 64K.
-        else => page_size * 2,
+        .windows => std.heap.pageSize() * 32, // Windows aligns to 64K.
+        else => std.heap.pageSize() * 2,
     };
     // This loop allocates until we find a page that is not aligned to the big
     // alignment. Then we shrink the allocation after the loop, but increase the
@@ -1260,7 +1292,7 @@ test "realloc large object to small object" {
     defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
     const allocator = gpa.allocator();
 
-    var slice = try allocator.alloc(u8, page_size * 2 + 50);
+    var slice = try allocator.alloc(u8, std.heap.pageSize() * 2 + 50);
     defer allocator.free(slice);
     slice[0] = 0x12;
     slice[16] = 0x34;
@@ -1300,18 +1332,18 @@ test "realloc large object to larger alignment" {
     var fba = std.heap.FixedBufferAllocator.init(&debug_buffer);
     const debug_allocator = fba.allocator();
 
-    var slice = try allocator.alignedAlloc(u8, 16, page_size * 2 + 50);
+    var slice = try allocator.alignedAlloc(u8, 16, std.heap.pageSize() * 2 + 50);
     defer allocator.free(slice);
 
     const big_alignment: usize = switch (builtin.os.tag) {
-        .windows => page_size * 32, // Windows aligns to 64K.
-        else => page_size * 2,
+        .windows => std.heap.pageSize() * 32, // Windows aligns to 64K.
+        else => std.heap.pageSize() * 2,
     };
     // This loop allocates until we find a page that is not aligned to the big alignment.
     var stuff_to_free = std.ArrayList([]align(16) u8).init(debug_allocator);
     while (mem.isAligned(@intFromPtr(slice.ptr), big_alignment)) {
         try stuff_to_free.append(slice);
-        slice = try allocator.alignedAlloc(u8, 16, page_size * 2 + 50);
+        slice = try allocator.alignedAlloc(u8, 16, std.heap.pageSize() * 2 + 50);
     }
     while (stuff_to_free.popOrNull()) |item| {
         allocator.free(item);
@@ -1319,26 +1351,26 @@ test "realloc large object to larger alignment" {
     slice[0] = 0x12;
     slice[16] = 0x34;
 
-    slice = try allocator.reallocAdvanced(slice, 32, page_size * 2 + 100);
+    slice = try allocator.reallocAdvanced(slice, 32, std.heap.pageSize() * 2 + 100);
     try std.testing.expect(slice[0] == 0x12);
     try std.testing.expect(slice[16] == 0x34);
 
-    slice = try allocator.reallocAdvanced(slice, 32, page_size * 2 + 25);
+    slice = try allocator.reallocAdvanced(slice, 32, std.heap.pageSize() * 2 + 25);
     try std.testing.expect(slice[0] == 0x12);
     try std.testing.expect(slice[16] == 0x34);
 
-    slice = try allocator.reallocAdvanced(slice, big_alignment, page_size * 2 + 100);
+    slice = try allocator.reallocAdvanced(slice, big_alignment, std.heap.pageSize() * 2 + 100);
     try std.testing.expect(slice[0] == 0x12);
     try std.testing.expect(slice[16] == 0x34);
 }
 
 test "large object shrinks to small but allocation fails during shrink" {
-    var failing_allocator = std.testing.FailingAllocator.init(std.heap.page_allocator, .{ .fail_index = 3 });
+    var failing_allocator = std.testing.FailingAllocator.init(std.heap.page_allocator, .{ .fail_index = 5 });
     var gpa = GeneralPurposeAllocator(.{}){ .backing_allocator = failing_allocator.allocator() };
     defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
     const allocator = gpa.allocator();
 
-    var slice = try allocator.alloc(u8, page_size * 2 + 50);
+    var slice = try allocator.alloc(u8, std.heap.pageSize() * 2 + 50);
     defer allocator.free(slice);
     slice[0] = 0x12;
     slice[3] = 0x34;
@@ -1409,7 +1441,7 @@ test "double frees" {
     try std.testing.expect(GPA.searchBucket(&gpa.empty_buckets, @intFromPtr(small.ptr), null) != null);
 
     // detect a large allocation double free
-    const large = try allocator.alloc(u8, 2 * page_size);
+    const large = try allocator.alloc(u8, 2 * std.heap.pageSize());
     try std.testing.expect(gpa.large_allocations.contains(@intFromPtr(large.ptr)));
     try std.testing.expectEqual(gpa.large_allocations.getEntry(@intFromPtr(large.ptr)).?.value_ptr.bytes, large);
     allocator.free(large);
@@ -1418,7 +1450,7 @@ test "double frees" {
 
     const normal_small = try allocator.alloc(u8, size_class);
     defer allocator.free(normal_small);
-    const normal_large = try allocator.alloc(u8, 2 * page_size);
+    const normal_large = try allocator.alloc(u8, 2 * std.heap.pageSize());
     defer allocator.free(normal_large);
 
     // check that flushing retained metadata doesn't disturb live allocations
@@ -1451,8 +1483,8 @@ test "bug 9995 fix, large allocs count requested size not backing size" {
     var gpa = GeneralPurposeAllocator(.{ .enable_memory_limit = true }){};
     const allocator = gpa.allocator();
 
-    var buf = try allocator.alignedAlloc(u8, 1, page_size + 1);
-    try std.testing.expect(gpa.total_requested_bytes == page_size + 1);
+    var buf = try allocator.alignedAlloc(u8, 1, std.heap.pageSize() + 1);
+    try std.testing.expect(gpa.total_requested_bytes == std.heap.pageSize() + 1);
     buf = try allocator.realloc(buf, 1);
     try std.testing.expect(gpa.total_requested_bytes == 1);
     buf = try allocator.realloc(buf, 2);
