@@ -6151,7 +6151,6 @@ fn finishFuncInstance(
         .@"linksection" = section,
         .@"addrspace" = fn_owner_decl.@"addrspace",
         .analysis = .complete,
-        .deletion_flag = false,
         .zir_decl_index = fn_owner_decl.zir_decl_index,
         .src_scope = fn_owner_decl.src_scope,
         .generation = generation,
@@ -7617,7 +7616,11 @@ pub fn createNamespace(
 }
 
 pub fn destroyNamespace(ip: *InternPool, gpa: Allocator, index: Module.Namespace.Index) void {
-    ip.namespacePtr(index).* = undefined;
+    ip.namespacePtr(index).* = .{
+        .parent = undefined,
+        .file_scope = undefined,
+        .ty = undefined,
+    };
     ip.namespaces_free_list.append(gpa, index) catch {
         // In order to keep `destroyNamespace` a non-fallible function, we ignore memory
         // allocation failures here, instead leaking the Namespace until garbage collection.
@@ -8297,6 +8300,13 @@ pub fn funcZirBodyInst(ip: *const InternPool, i: Index) Zir.Inst.Index {
             const func_decl_index = ip.extra.items[item.data + generic_owner_field_index];
             assert(ip.items.items(.tag)[func_decl_index] == .func_decl);
             break :b ip.items.items(.data)[func_decl_index] + zir_body_inst_field_index;
+        },
+        .func_coerced => {
+            const datas = ip.items.items(.data);
+            const uncoerced_func_index: Index = @enumFromInt(ip.extra.items[
+                datas[@intFromEnum(i)] + std.meta.fieldIndex(Tag.FuncCoerced, "func").?
+            ]);
+            return ip.funcZirBodyInst(uncoerced_func_index);
         },
         else => unreachable,
     };
