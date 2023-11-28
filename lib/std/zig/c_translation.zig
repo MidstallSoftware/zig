@@ -424,7 +424,7 @@ pub const Macros = struct {
     pub fn CAST_OR_CALL(a: anytype, b: anytype) switch (@typeInfo(@TypeOf(a))) {
         .Type => a,
         .Fn => |fn_info| fn_info.return_type orelse void,
-        else => |info| @compileError("Unexpected argument type: " ++ @tagName(info)),
+        else => @compileError("Unexpected argument type: " ++ @typeName(@TypeOf(a))),
     } {
         switch (@typeInfo(@TypeOf(a))) {
             .Type => return cast(a, b),

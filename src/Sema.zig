@@ -11224,6 +11224,10 @@ fn zirSwitchBlock(sema: *Sema, block: *Block, inst: Zir.Inst.Index, operand_is_r
     const maybe_union_ty = sema.typeOf(raw_operand_val);
     const union_originally = maybe_union_ty.zigTypeTag(mod) == .Union;
 
+    if (union_originally and special.capture != .none and !special.is_inline) {
+        return sema.fail(block, special_prong_src, "non-inline union switch prongs cannot capture", .{});
+    }
+
     // Duplicate checking variables later also used for `inline else`.
     var seen_enum_fields: []?Module.SwitchProngSrc = &.{};
     var seen_errors = SwitchErrorSet.init(gpa);
