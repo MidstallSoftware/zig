@@ -1,4 +1,6 @@
 const std = @import("std");
+const builtin = @import("builtin");
+const build_options = @import("build_options");
 
 const CodeGen = @This();
 
@@ -21,6 +23,9 @@ const ErrorMsg = Module.ErrorMsg;
 const Alignment = InternPool.Alignment;
 const RegisterManager = abi.RegisterManager;
 const Register = bits.Register;
+
+const CodeGenError = codegen.CodeGenError;
+const Result = codegen.Result;
 
 gpa: Allocator,
 air: Air,
@@ -115,4 +120,96 @@ const BlockData = struct {
 
 const StackAllocation = struct {
     inst: Air.Inst.Index,
+};
+
+pub fn generate(
+    bin_file: *link.File,
+    src_loc: Module.SrcLoc,
+    func_index: InternPool.Index,
+    air: Air,
+    liveness: Liveness,
+    code: *std.ArrayList(u8),
+    debug_output: DebugInfoOutput,
+) CodeGenError!Result {
+    if (build_options.skip_non_native and builtin.cpu.arch != bin_file.options.target.cpu.arch) {
+        @panic("Attempted to compile for architecture that was disabled by build configuration");
+    }
+
+    const mod = bin_file.options.module.?;
+    const func = mod.funcInfo(func_index);
+    const fn_owner_decl = mod.declPtr(func.owner_decl);
+    std.debug.assert(fn_owner_decl.has_tv);
+    const fn_type = fn_owner_decl.ty;
+
+    var branch_stack = std.ArrayList(Branch).init(bin_file.allocator);
+    defer {
+        std.debug.assert(branch_stack.items.len == 1);
+        branch_stack.items[0].deinit(bin_file.allocator);
+        branch_stack.deinit();
+    }
+    try branch_stack.append(.{});
+
+    var function = CodeGen{
+        .gpa = bin_file.allocator,
+        .air = air,
+        .liveness = liveness,
+        .target = &bin_file.options.target,
+        .bin_file = bin_file,
+        .func_index = func_index,
+        .code = code,
+        .debug_output = debug_output,
+        .err_msg = null,
+        .args = undefined, // populated after `resolveCallingConventionValues`
+        .ret_mcv = undefined, // populated after `resolveCallingConventionValues`
+        .fn_type = fn_type,
+        .arg_index = 0,
+        .branch_stack = &branch_stack,
+        .src_loc = src_loc,
+        .stack_align = undefined,
+        .end_di_line = func.rbrace_line,
+        .end_di_column = func.rbrace_column,
+    };
+    defer function.stack.deinit(bin_file.allocator);
+    defer function.blocks.deinit(bin_file.allocator);
+    defer function.exitlude_jump_relocs.deinit(bin_file.allocator);
+
+    var call_info = function.resolveCallingConventionValues(fn_type) catch |err| switch (err) {
+        else => |e| return e,
+    };
+    defer call_info.deinit(&function);
+
+    return Result.ok;
+}
+
+/// Caller must call `CallMCValues.deinit`.
+fn resolveCallingConventionValues(self: *CodeGen, fn_ty: Type) !CallMCValues {
+    const mod = self.bin_file.options.module.?;
+    const ip = &mod.intern_pool;
+    _ = ip;
+    const fn_info = mod.typeToFunc(fn_ty).?;
+    const cc = fn_info.cc;
+
+    std.debug.print("Calling: {}\n", .{cc});
+
+    const result: CallMCValues = .{
+        .args = try self.gpa.alloc(MCValue, fn_info.param_types.len),
+        // These undefined values must be populated before returning from this function.
+        .return_value = undefined,
+        .stack_byte_count = undefined,
+        .stack_align = undefined,
+    };
+
+    return result;
+}
+
+const CallMCValues = struct {
+    args: []MCValue,
+    return_value: MCValue,
+    stack_byte_count: u32,
+    stack_align: Alignment,
+
+    fn deinit(self: *CallMCValues, func: *CodeGen) void {
+        func.gpa.free(self.args);
+        self.* = undefined;
+    }
 };
