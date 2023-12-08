@@ -332,6 +332,7 @@ pub const File = struct {
                 .nvptx => &(try NvPtx.createEmpty(allocator, options)).base,
                 .hex => return error.HexObjectFormatUnimplemented,
                 .raw => return error.RawObjectFormatUnimplemented,
+                .zraw => return error.ZRawObjectFormatUnimplemented,
                 .dxcontainer => return error.DirectXContainerObjectFormatUnimplemented,
             };
         }
@@ -395,6 +396,7 @@ pub const File = struct {
                 },
                 .hex => return error.HexObjectFormatUnimplemented,
                 .raw => return error.RawObjectFormatUnimplemented,
+                .zraw => return error.ZRawObjectFormatUnimplemented,
                 .dxcontainer => return error.DirectXContainerObjectFormatUnimplemented,
             }
         };

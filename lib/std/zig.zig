@@ -200,6 +200,9 @@ pub fn binNameAlloc(allocator: std.mem.Allocator, options: BinNameOptions) error
         },
         .nvptx => return std.fmt.allocPrint(allocator, "{s}.ptx", .{root_name}),
         .dxcontainer => return std.fmt.allocPrint(allocator, "{s}.dxil", .{root_name}),
+
+        // Z80 likes to use .bin for its binary files.
+        .zraw => return std.fmt.allocPrint(allocator, "{s}.bin", .{root_name}),
     }
 }
 

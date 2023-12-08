@@ -630,6 +630,8 @@ pub const Target = struct {
         plan9,
         /// Nvidia PTX format
         nvptx,
+        /// Z80 binary
+        zraw,
 
         pub fn fileExt(of: ObjectFormat, cpu_arch: Cpu.Arch) [:0]const u8 {
             return switch (of) {
@@ -642,6 +644,7 @@ pub const Target = struct {
                 .plan9 => plan9Ext(cpu_arch),
                 .nvptx => ".ptx",
                 .dxcontainer => ".dxil",
+                .zraw => ".zraw",
             };
         }
 
@@ -654,6 +657,7 @@ pub const Target = struct {
                     .wasm32, .wasm64 => .wasm,
                     .spirv32, .spirv64 => .spirv,
                     .nvptx, .nvptx64 => .nvptx,
+                    .z80 => .bin,
                     else => .elf,
                 },
             };
