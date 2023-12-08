@@ -657,7 +657,7 @@ pub const Target = struct {
                     .wasm32, .wasm64 => .wasm,
                     .spirv32, .spirv64 => .spirv,
                     .nvptx, .nvptx64 => .nvptx,
-                    .z80 => .bin,
+                    .z80 => .zraw,
                     else => .elf,
                 },
             };

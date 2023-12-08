@@ -332,7 +332,7 @@ pub const File = struct {
                 .nvptx => &(try NvPtx.createEmpty(allocator, options)).base,
                 .hex => return error.HexObjectFormatUnimplemented,
                 .raw => return error.RawObjectFormatUnimplemented,
-                .zraw => return error.ZRawObjectFormatUnimplemented,
+                .zraw => &(try ZRaw.createEmpty(allocator, options)).base,
                 .dxcontainer => return error.DirectXContainerObjectFormatUnimplemented,
             };
         }
@@ -353,6 +353,7 @@ pub const File = struct {
                     .nvptx => &(try NvPtx.createEmpty(allocator, options)).base,
                     .hex => return error.HexObjectFormatUnimplemented,
                     .raw => return error.RawObjectFormatUnimplemented,
+                    .zraw => &(try ZRaw.createEmpty(allocator, options)).base,
                     .dxcontainer => return error.DirectXContainerObjectFormatUnimplemented,
                 };
             }
@@ -394,9 +395,11 @@ pub const File = struct {
                     if (build_options.only_c) unreachable;
                     break :f &(try NvPtx.openPath(allocator, sub_path, options)).base;
                 },
+                .zraw => {
+                    break :f &(try ZRaw.openPath(allocator, sub_path, options)).base;
+                },
                 .hex => return error.HexObjectFormatUnimplemented,
                 .raw => return error.RawObjectFormatUnimplemented,
-                .zraw => return error.ZRawObjectFormatUnimplemented,
                 .dxcontainer => return error.DirectXContainerObjectFormatUnimplemented,
             }
         };
@@ -1249,6 +1252,7 @@ pub const File = struct {
     pub const Wasm = @import("link/Wasm.zig");
     pub const NvPtx = @import("link/NvPtx.zig");
     pub const Dwarf = @import("link/Dwarf.zig");
+    pub const ZRaw = @import("link/ZRaw.zig");
 };
 
 pub fn determineMode(options: Options) fs.File.Mode {
