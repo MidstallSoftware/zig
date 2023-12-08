@@ -480,6 +480,7 @@ pub const Target = struct {
     pub const wasm = @import("target/wasm.zig");
     pub const x86 = @import("target/x86.zig");
     pub const xtensa = @import("target/xtensa.zig");
+    pub const z80 = @import("target/z80.zig");
 
     pub const Abi = enum {
         none,
@@ -904,6 +905,7 @@ pub const Target = struct {
             // Stage1 currently assumes that architectures above this comment
             // map one-to-one with the ZigLLVM_ArchType enum.
             spu_2,
+            z80,
 
             pub inline fn isX86(arch: Arch) bool {
                 return switch (arch) {
@@ -1071,6 +1073,7 @@ pub const Target = struct {
                     .spirv64 => .NONE,
                     .loongarch32 => .NONE,
                     .loongarch64 => .NONE,
+                    .z80 => .NONE,
                 };
             }
 
@@ -1189,6 +1192,7 @@ pub const Target = struct {
                     .loongarch32,
                     .loongarch64,
                     .arc,
+                    .z80,
                     => .little,
 
                     .armeb,
@@ -1366,6 +1370,7 @@ pub const Target = struct {
                     .nvptx, .nvptx64 => &nvptx.cpu.sm_20,
                     .ve => &ve.cpu.generic,
                     .wasm32, .wasm64 => &wasm.cpu.generic,
+                    .z80 => &z80.cpu.generic,
 
                     else => &S.generic_model,
                 };
@@ -1696,6 +1701,7 @@ pub const Target = struct {
                 .loongarch32,
                 .loongarch64,
                 .xtensa,
+                .z80,
                 => return result,
             },
 
@@ -1778,7 +1784,9 @@ pub const Target = struct {
 
     pub fn maxIntAlignment(target: Target) u16 {
         return switch (target.cpu.arch) {
-            .avr => 1,
+            .avr,
+            .z80,
+            => 1,
             .msp430 => 2,
             .xcore => 4,
 
@@ -1876,6 +1884,7 @@ pub const Target = struct {
             .avr,
             .msp430,
             .spu_2,
+            .z80,
             => return 16,
 
             .arc,
@@ -2372,7 +2381,9 @@ pub const Target = struct {
     pub fn c_type_alignment(target: Target, c_type: CType) u16 {
         // Overrides for unusual alignments
         switch (target.cpu.arch) {
-            .avr => return 1,
+            .avr,
+            .z80,
+            => return 1,
             .x86 => switch (target.os.tag) {
                 .windows, .uefi => switch (c_type) {
                     .longlong, .ulonglong, .double => return 8,
@@ -2410,6 +2421,7 @@ pub const Target = struct {
 
                 .msp430,
                 .avr,
+                .z80,
                 => 2,
 
                 .arc,

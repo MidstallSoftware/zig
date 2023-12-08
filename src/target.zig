@@ -310,7 +310,9 @@ pub fn hasLlvmSupport(target: std.Target, ofmt: std.Target.ObjectFormat) bool {
         .ve,
         => true,
 
-        .spu_2 => false,
+        .spu_2,
+        .z80,
+        => false,
     };
 }
 

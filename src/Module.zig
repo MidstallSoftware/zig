@@ -5999,6 +5999,7 @@ pub fn atomicPtrAlignment(
         .avr,
         .msp430,
         .spu_2,
+        .z80, // TODO: not right z80 alignemnt. probably error here
         => 16,
 
         .arc,
