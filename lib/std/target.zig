@@ -1374,7 +1374,7 @@ pub const Target = struct {
                     .nvptx, .nvptx64 => &nvptx.cpu.sm_20,
                     .ve => &ve.cpu.generic,
                     .wasm32, .wasm64 => &wasm.cpu.generic,
-                    .z80 => &z80.cpu.generic,
+                    .z80 => &z80.cpu.z80,
 
                     else => &S.generic_model,
                 };

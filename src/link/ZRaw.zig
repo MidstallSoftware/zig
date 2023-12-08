@@ -49,7 +49,7 @@ pub fn createEmpty(gpa: Allocator, options: link.Options) !*ZRaw {
 }
 
 pub fn deinit(self: *ZRaw) void {
-    self.base.destroy();
+    _ = self;
 }
 
 pub fn updateFunc(

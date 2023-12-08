@@ -35,7 +35,9 @@ pub const all_features = blk: {
 };
 
 pub const cpu = struct {
-    pub const generic = CpuModel{
+    // This is a bit confused because the CPU module
+    // is called the same as the architecture.
+    pub const z80 = CpuModel{
         .name = "z80",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{}),
