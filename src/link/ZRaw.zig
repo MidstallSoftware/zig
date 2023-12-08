@@ -9,12 +9,14 @@ const Allocator = std.mem.Allocator;
 
 const log = std.log.scoped(.link);
 
+const Codegen = @import("../codegen.zig");
 const link = @import("../link.zig");
 const Module = @import("../Module.zig");
 const InternPool = @import("../InternPool.zig");
 const Air = @import("../Air.zig");
 const Liveness = @import("../Liveness.zig");
 const Compilation = @import("../Compilation.zig");
+const Value = @import("../value.zig").Value;
 
 const ZRaw = @This();
 
@@ -59,26 +61,70 @@ pub fn updateFunc(
     air: Air,
     liveness: Liveness,
 ) !void {
-    _ = self;
-    _ = air;
-    _ = liveness;
     if (build_options.skip_non_native) {
         @panic("Attempted to compile for architecture that was disabled by build configuration");
     }
 
     const func = module.funcInfo(func_index);
-    const decl = module.declPtr(func.owner_decl);
-    log.debug("lowering function {s}", .{module.intern_pool.stringToSlice(decl.name)});
+    const decl_index = func.owner_decl;
+    const decl = module.declPtr(decl_index);
+
+    var code_buffer = std.ArrayList(u8).init(self.base.allocator);
+    defer code_buffer.deinit();
+
+    const res = try Codegen.generateFunction(
+        &self.base,
+        decl.srcLoc(module),
+        func_index,
+        air,
+        liveness,
+        &code_buffer,
+        .none,
+    );
+
+    const code = switch (res) {
+        .ok => code_buffer.items,
+        .fail => |em| {
+            decl.analysis = .codegen_failure;
+            try module.failed_decls.put(module.gpa, decl_index, em);
+            return;
+        },
+    };
+
+    std.debug.print("Code: {s}\n", .{code});
 }
 
 pub fn updateDecl(self: *ZRaw, module: *Module, decl_index: InternPool.DeclIndex) !void {
-    _ = self;
     if (build_options.skip_non_native) {
         @panic("Attempted to compile for architecture that was disabled by build configuration");
     }
 
+    // const atom_index = try self.getOrCreateAtomForDecl(decl_index);
+    // const sym_index = self.getAtom(atom_index).getSymbolIndex().?;
+    // Atom.freeRelocations(self, atom_index);
+
     const decl = module.declPtr(decl_index);
     log.debug("lowering declaration {s}", .{module.intern_pool.stringToSlice(decl.name)});
+
+    var code_buffer = std.ArrayList(u8).init(self.base.allocator);
+    defer code_buffer.deinit();
+
+    const decl_val = if (decl.val.getVariable(module)) |variable| Value.fromInterned(variable.init) else decl.val;
+    const res = try Codegen.generateSymbol(&self.base, decl.srcLoc(module), .{
+        .ty = decl.ty,
+        .val = decl_val,
+    }, &code_buffer, .none, .{
+        .parent_atom_index = 0,
+    });
+    const code = switch (res) {
+        .ok => code_buffer.items,
+        .fail => |em| {
+            decl.analysis = .codegen_failure;
+            try module.failed_decls.put(module.gpa, decl_index, em);
+            return;
+        },
+    };
+    _ = code;
 }
 
 pub fn updateExports(
