@@ -36775,7 +36775,7 @@ fn getBuiltinType(sema: *Sema, name: []const u8) CompileError!Type {
 pub fn typeHasOnePossibleValue(sema: *Sema, ty: Type) CompileError!?Value {
     const mod = sema.mod;
     const ip = &mod.intern_pool;
-    return switch (ty.toIntern()) {
+    const return_val: ?Value = switch (ty.toIntern()) {
         .u0_type,
         .i0_type,
         => try mod.intValue(ty, 0),
@@ -37097,6 +37097,20 @@ pub fn typeHasOnePossibleValue(sema: *Sema, ty: Type) CompileError!?Value {
             },
         },
     };
+
+    const expected_val = ty.onePossibleValue(mod);
+
+    if (return_val) |r_val| {
+        if (expected_val) |e_val| {
+            r_val.eql(e_val, ty, mod);
+        }
+    } else {
+        if (expected_val != null) {
+            unreachable;
+        }
+    }
+
+    return return_val;
 }
 
 /// Returns the type of the AIR instruction.
