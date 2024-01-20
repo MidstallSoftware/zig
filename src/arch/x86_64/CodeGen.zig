@@ -15334,12 +15334,48 @@ fn airSplat(self: *Self, inst: Air.Inst.Index) !void {
     return self.finishAir(inst, result, .{ ty_op.operand, .none, .none });
 }
 
+/// Selects values element-wise from a or b based on pred.
+/// If pred[i] is true, the corresponding element in the
+/// result will be a[i] and otherwise b[i].
 fn airSelect(self: *Self, inst: Air.Inst.Index) !void {
+    const mod = self.bin_file.comp.module.?;
     const pl_op = self.air.instructions.items(.data)[@intFromEnum(inst)].pl_op;
     const extra = self.air.extraData(Air.Bin, pl_op.payload).data;
-    _ = extra;
-    return self.fail("TODO implement airSelect for x86_64", .{});
-    //return self.finishAir(inst, result, .{ pl_op.operand, extra.lhs, extra.rhs });
+    const rhs = extra.rhs;
+    const lhs = extra.lhs;
+
+    // Operand is a vector of booleans.
+    // RHS is the a vector
+    // LHS is the b vector
+
+    const result: MCValue = result: {
+        const operand_ty = self.typeOf(pl_op.operand);
+        const rhs_ty = self.typeOf(rhs);
+        _ = rhs_ty; // autofix
+        const lhs_ty = self.typeOf(lhs);
+        _ = lhs_ty;
+
+        const operand_mcv = try self.resolveInst(pl_op.operand);
+
+        const abi_size: u32 = @intCast(operand_ty.abiSize(mod));
+        const operand_reg = registerAlias(
+            try self.copyToTmpRegister(operand_ty, operand_mcv),
+            abi_size,
+        );
+
+        switch (operand_ty.vectorLen(mod)) {
+            // Just do 2 for now, to simplify this.
+            2 => {
+                // mov ecx, xmm0
+                try self.asmRegisterRegister(.{ .v_d, .mov }, .ecx, operand_reg);
+            },
+            else => return self.fail("TODO airSelect for {}", .{operand_ty.fmt(mod)}),
+        }
+
+        break :result operand_mcv;
+    };
+
+    return self.finishAir(inst, result, .{ pl_op.operand, lhs, rhs });
 }
 
 fn airShuffle(self: *Self, inst: Air.Inst.Index) !void {
@@ -15401,7 +15437,7 @@ fn airReduce(self: *Self, inst: Air.Inst.Index) !void {
                 else => return self.fail("TODO implement airReduce for {}", .{operand_ty.fmt(mod)}),
             }
         }
-        return self.fail("TODO implement airReduce for {}", .{operand_ty.fmt(mod)});
+        return self.fail("TODO implement airReduce for {} for x86_64", .{operand_ty.fmt(mod)});
     };
     return self.finishAir(inst, result, .{ reduce.operand, .none, .none });
 }
