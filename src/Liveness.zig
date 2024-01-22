@@ -303,6 +303,7 @@ pub fn categorizeOperand(
         .memset,
         .memset_safe,
         .memcpy,
+        .memmove,
         => {
             const o = air_datas[@intFromEnum(inst)].bin_op;
             if (o.lhs == operand_ref) return matchOperandSmallIndex(l, inst, 0, .write);
@@ -948,6 +949,7 @@ fn analyzeInst(
         .memset,
         .memset_safe,
         .memcpy,
+        .memmove,
         => {
             const o = inst_datas[@intFromEnum(inst)].bin_op;
             return analyzeOperands(a, pass, data, inst, .{ o.lhs, o.rhs, .none });

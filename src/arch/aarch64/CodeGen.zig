@@ -778,9 +778,10 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
             .cmpxchg_weak    => try self.airCmpxchg(inst),
             .atomic_rmw      => try self.airAtomicRmw(inst),
             .atomic_load     => try self.airAtomicLoad(inst),
-            .memcpy          => try self.airMemcpy(inst),
             .memset          => try self.airMemset(inst, false),
             .memset_safe     => try self.airMemset(inst, true),
+            .memcpy          => try self.airMemcpy(inst),
+            .memmove         => try self.airMemmove(inst),
             .set_union_tag   => try self.airSetUnionTag(inst),
             .get_union_tag   => try self.airGetUnionTag(inst),
             .clz             => try self.airClz(inst),
@@ -6002,6 +6003,11 @@ fn airMemset(self: *Self, inst: Air.Inst.Index, safety: bool) !void {
 }
 
 fn airMemcpy(self: *Self, inst: Air.Inst.Index) !void {
+    _ = inst;
+    return self.fail("TODO implement airMemcpy for {}", .{self.target.cpu.arch});
+}
+
+fn airMemmove(self: *Self, inst: Air.Inst.Index) !void {
     _ = inst;
     return self.fail("TODO implement airMemcpy for {}", .{self.target.cpu.arch});
 }

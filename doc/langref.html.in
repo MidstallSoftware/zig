@@ -8784,6 +8784,16 @@ test "integer cast panic" {
       {#syntax#}std.crypto.utils.secureZero{#endsyntax#}</p>
       {#header_close#}
 
+      {#header_open|@memmove#}
+      <pre>{#syntax#}@memmove(dest, source) void{#endsyntax#}</pre>
+      <p>{#syntax#}dest{#endsyntax#} must be a mutable slice, a mutable pointer to an array, or
+        a mutable many-item {#link|pointer|Pointers#}. It may have any
+        alignment, and it may have any element type.</p>
+      <p>{#syntax#}source{#endsyntax#} must be a slice, a pointer to
+        an array, or a many-item {#link|pointer|Pointers#}. It may
+        have any alignment, and it may have any element type.</p>
+      {#header_close#}
+
       {#header_open|@min#}
       <pre>{#syntax#}@min(a: T, b: T) T{#endsyntax#}</pre>
       <p>

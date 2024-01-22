@@ -417,8 +417,8 @@ const Writer = struct {
             .vector_type,
             .max,
             .min,
-            .memcpy,
             .memset,
+            .memcpy,
             .elem_ptr_node,
             .elem_val_node,
             .elem_ptr,
@@ -613,6 +613,7 @@ const Writer = struct {
             .cmpxchg => try self.writeCmpxchg(stream, extended),
             .ptr_cast_full => try self.writePtrCastFull(stream, extended),
             .ptr_cast_no_dest => try self.writePtrCastNoDest(stream, extended),
+            .memmove => try self.writePlNodeBinExtended(stream, extended),
         }
     }
 
@@ -1104,6 +1105,16 @@ const Writer = struct {
         if (flags.volatile_cast) try stream.writeAll("volatile_cast, ");
         try self.writeInstRef(stream, extra.operand);
         try stream.writeAll(")) ");
+        try self.writeSrc(stream, src);
+    }
+
+    fn writePlNodeBinExtended(self: *Writer, stream: anytype, inst: Zir.Inst.Extended.InstData) !void {
+        const extra = self.code.extraData(Zir.Inst.BinNode, inst.operand).data;
+        const src = LazySrcLoc.nodeOffset(extra.node);
+        try self.writeInstRef(stream, extra.lhs);
+        try stream.writeAll(", ");
+        try self.writeInstRef(stream, extra.rhs);
+        try stream.writeAll(") ");
         try self.writeSrc(stream, src);
     }
 

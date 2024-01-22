@@ -1039,14 +1039,19 @@ fn builtinCall(astrl: *AstRlAnnotate, block: ?*Block, ri: ResultInfo, node: Ast.
             _ = try astrl.expr(args[2], block, ResultInfo.none);
             return false;
         },
+        .memset => {
+            _ = try astrl.expr(args[0], block, ResultInfo.none);
+            _ = try astrl.expr(args[1], block, ResultInfo.type_only);
+            return false;
+        },
         .memcpy => {
             _ = try astrl.expr(args[0], block, ResultInfo.none);
             _ = try astrl.expr(args[1], block, ResultInfo.none);
             return false;
         },
-        .memset => {
+        .memmove => {
             _ = try astrl.expr(args[0], block, ResultInfo.none);
-            _ = try astrl.expr(args[1], block, ResultInfo.type_only);
+            _ = try astrl.expr(args[1], block, ResultInfo.none);
             return false;
         },
         .shuffle => {

@@ -3241,6 +3241,7 @@ fn genBodyInner(f: *Function, body: []const Air.Inst.Index) error{ AnalysisFail,
             .memset           => try airMemset(f, inst, false),
             .memset_safe      => try airMemset(f, inst, true),
             .memcpy           => try airMemcpy(f, inst),
+            .memmove          => try airMemmove(f, inst),
             .set_union_tag    => try airSetUnionTag(f, inst),
             .get_union_tag    => try airGetUnionTag(f, inst),
             .clz              => try airUnBuiltinCall(f, inst, "clz", .bits),
@@ -6699,6 +6700,45 @@ fn airMemcpy(f: *Function, inst: Air.Inst.Index) !CValue {
     const writer = f.object.writer();
 
     try writer.writeAll("memcpy(");
+    try writeSliceOrPtr(f, writer, dest_ptr, dest_ty);
+    try writer.writeAll(", ");
+    try writeSliceOrPtr(f, writer, src_ptr, src_ty);
+    try writer.writeAll(", ");
+    switch (dest_ty.ptrSize(mod)) {
+        .Slice => {
+            const elem_ty = dest_ty.childType(mod);
+            const elem_abi_size = elem_ty.abiSize(mod);
+            try f.writeCValueMember(writer, dest_ptr, .{ .identifier = "len" });
+            if (elem_abi_size > 1) {
+                try writer.print(" * {d});\n", .{elem_abi_size});
+            } else {
+                try writer.writeAll(");\n");
+            }
+        },
+        .One => {
+            const array_ty = dest_ty.childType(mod);
+            const elem_ty = array_ty.childType(mod);
+            const elem_abi_size = elem_ty.abiSize(mod);
+            const len = array_ty.arrayLen(mod) * elem_abi_size;
+            try writer.print("{d});\n", .{len});
+        },
+        .Many, .C => unreachable,
+    }
+
+    try reap(f, inst, &.{ bin_op.lhs, bin_op.rhs });
+    return .none;
+}
+
+fn airMemmove(f: *Function, inst: Air.Inst.Index) !CValue {
+    const mod = f.object.dg.module;
+    const bin_op = f.air.instructions.items(.data)[@intFromEnum(inst)].bin_op;
+    const dest_ptr = try f.resolveInst(bin_op.lhs);
+    const src_ptr = try f.resolveInst(bin_op.rhs);
+    const dest_ty = f.typeOf(bin_op.lhs);
+    const src_ty = f.typeOf(bin_op.rhs);
+    const writer = f.object.writer();
+
+    try writer.writeAll("memmove(");
     try writeSliceOrPtr(f, writer, dest_ptr, dest_ty);
     try writer.writeAll(", ");
     try writeSliceOrPtr(f, writer, src_ptr, src_ty);

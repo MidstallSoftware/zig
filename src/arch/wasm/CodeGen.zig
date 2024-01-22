@@ -1945,8 +1945,6 @@ fn genInst(func: *CodeGen, inst: Air.Inst.Index) InnerError!void {
 
         .load => func.airLoad(inst),
         .loop => func.airLoop(inst),
-        .memset => func.airMemset(inst, false),
-        .memset_safe => func.airMemset(inst, true),
         .not => func.airNot(inst),
         .optional_payload => func.airOptionalPayload(inst),
         .optional_payload_ptr => func.airOptionalPayloadPtr(inst),
@@ -2005,7 +2003,10 @@ fn genInst(func: *CodeGen, inst: Air.Inst.Index) InnerError!void {
         .wasm_memory_size => func.airWasmMemorySize(inst),
         .wasm_memory_grow => func.airWasmMemoryGrow(inst),
 
+        .memset => func.airMemset(inst, false),
+        .memset_safe => func.airMemset(inst, true),
         .memcpy => func.airMemcpy(inst),
+        .memmove => func.airMemmove(inst),
 
         .ret_addr => func.airRetAddr(inst),
         .tag_name => func.airTagName(inst),
@@ -4844,128 +4845,6 @@ fn airPtrBinOp(func: *CodeGen, inst: Air.Inst.Index, op: Op) InnerError!void {
     func.finishAir(inst, result, &.{ bin_op.lhs, bin_op.rhs });
 }
 
-fn airMemset(func: *CodeGen, inst: Air.Inst.Index, safety: bool) InnerError!void {
-    const mod = func.bin_file.base.comp.module.?;
-    if (safety) {
-        // TODO if the value is undef, write 0xaa bytes to dest
-    } else {
-        // TODO if the value is undef, don't lower this instruction
-    }
-    const bin_op = func.air.instructions.items(.data)[@intFromEnum(inst)].bin_op;
-
-    const ptr = try func.resolveInst(bin_op.lhs);
-    const ptr_ty = func.typeOf(bin_op.lhs);
-    const value = try func.resolveInst(bin_op.rhs);
-    const len = switch (ptr_ty.ptrSize(mod)) {
-        .Slice => try func.sliceLen(ptr),
-        .One => @as(WValue, .{ .imm32 = @as(u32, @intCast(ptr_ty.childType(mod).arrayLen(mod))) }),
-        .C, .Many => unreachable,
-    };
-
-    const elem_ty = if (ptr_ty.ptrSize(mod) == .One)
-        ptr_ty.childType(mod).childType(mod)
-    else
-        ptr_ty.childType(mod);
-
-    const dst_ptr = try func.sliceOrArrayPtr(ptr, ptr_ty);
-    try func.memset(elem_ty, dst_ptr, len, value);
-
-    func.finishAir(inst, .none, &.{ bin_op.lhs, bin_op.rhs });
-}
-
-/// Sets a region of memory at `ptr` to the value of `value`
-/// When the user has enabled the bulk_memory feature, we lower
-/// this to wasm's memset instruction. When the feature is not present,
-/// we implement it manually.
-fn memset(func: *CodeGen, elem_ty: Type, ptr: WValue, len: WValue, value: WValue) InnerError!void {
-    const mod = func.bin_file.base.comp.module.?;
-    const abi_size = @as(u32, @intCast(elem_ty.abiSize(mod)));
-
-    // When bulk_memory is enabled, we lower it to wasm's memset instruction.
-    // If not, we lower it ourselves.
-    if (std.Target.wasm.featureSetHas(func.target.cpu.features, .bulk_memory) and abi_size == 1) {
-        try func.lowerToStack(ptr);
-        try func.emitWValue(value);
-        try func.emitWValue(len);
-        try func.addExtended(.memory_fill);
-        return;
-    }
-
-    const final_len = switch (len) {
-        .imm32 => |val| WValue{ .imm32 = val * abi_size },
-        .imm64 => |val| WValue{ .imm64 = val * abi_size },
-        else => if (abi_size != 1) blk: {
-            const new_len = try func.ensureAllocLocal(Type.usize);
-            try func.emitWValue(len);
-            switch (func.arch()) {
-                .wasm32 => {
-                    try func.emitWValue(.{ .imm32 = abi_size });
-                    try func.addTag(.i32_mul);
-                },
-                .wasm64 => {
-                    try func.emitWValue(.{ .imm64 = abi_size });
-                    try func.addTag(.i64_mul);
-                },
-                else => unreachable,
-            }
-            try func.addLabel(.local_set, new_len.local.value);
-            break :blk new_len;
-        } else len,
-    };
-
-    var end_ptr = try func.allocLocal(Type.usize);
-    defer end_ptr.free(func);
-    var new_ptr = try func.buildPointerOffset(ptr, 0, .new);
-    defer new_ptr.free(func);
-
-    // get the loop conditional: if current pointer address equals final pointer's address
-    try func.lowerToStack(ptr);
-    try func.emitWValue(final_len);
-    switch (func.arch()) {
-        .wasm32 => try func.addTag(.i32_add),
-        .wasm64 => try func.addTag(.i64_add),
-        else => unreachable,
-    }
-    try func.addLabel(.local_set, end_ptr.local.value);
-
-    // outer block to jump to when loop is done
-    try func.startBlock(.block, wasm.block_empty);
-    try func.startBlock(.loop, wasm.block_empty);
-
-    // check for codition for loop end
-    try func.emitWValue(new_ptr);
-    try func.emitWValue(end_ptr);
-    switch (func.arch()) {
-        .wasm32 => try func.addTag(.i32_eq),
-        .wasm64 => try func.addTag(.i64_eq),
-        else => unreachable,
-    }
-    try func.addLabel(.br_if, 1); // jump out of loop into outer block (finished)
-
-    // store the value at the current position of the pointer
-    try func.store(new_ptr, value, elem_ty, 0);
-
-    // move the pointer to the next element
-    try func.emitWValue(new_ptr);
-    switch (func.arch()) {
-        .wasm32 => {
-            try func.emitWValue(.{ .imm32 = abi_size });
-            try func.addTag(.i32_add);
-        },
-        .wasm64 => {
-            try func.emitWValue(.{ .imm64 = abi_size });
-            try func.addTag(.i64_add);
-        },
-        else => unreachable,
-    }
-    try func.addLabel(.local_set, new_ptr.local.value);
-
-    // end of loop
-    try func.addLabel(.br, 0); // jump to start of loop
-    try func.endBlock();
-    try func.endBlock();
-}
-
 fn airArrayElemVal(func: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     const mod = func.bin_file.base.comp.module.?;
     const bin_op = func.air.instructions.items(.data)[@intFromEnum(inst)].bin_op;
@@ -5766,6 +5645,128 @@ fn sliceOrArrayPtr(func: *CodeGen, ptr: WValue, ptr_ty: Type) InnerError!WValue 
     }
 }
 
+fn airMemset(func: *CodeGen, inst: Air.Inst.Index, safety: bool) InnerError!void {
+    const mod = func.bin_file.base.comp.module.?;
+    if (safety) {
+        // TODO if the value is undef, write 0xaa bytes to dest
+    } else {
+        // TODO if the value is undef, don't lower this instruction
+    }
+    const bin_op = func.air.instructions.items(.data)[@intFromEnum(inst)].bin_op;
+
+    const ptr = try func.resolveInst(bin_op.lhs);
+    const ptr_ty = func.typeOf(bin_op.lhs);
+    const value = try func.resolveInst(bin_op.rhs);
+    const len = switch (ptr_ty.ptrSize(mod)) {
+        .Slice => try func.sliceLen(ptr),
+        .One => @as(WValue, .{ .imm32 = @as(u32, @intCast(ptr_ty.childType(mod).arrayLen(mod))) }),
+        .C, .Many => unreachable,
+    };
+
+    const elem_ty = if (ptr_ty.ptrSize(mod) == .One)
+        ptr_ty.childType(mod).childType(mod)
+    else
+        ptr_ty.childType(mod);
+
+    const dst_ptr = try func.sliceOrArrayPtr(ptr, ptr_ty);
+    try func.memset(elem_ty, dst_ptr, len, value);
+
+    func.finishAir(inst, .none, &.{ bin_op.lhs, bin_op.rhs });
+}
+
+/// Sets a region of memory at `ptr` to the value of `value`
+/// When the user has enabled the bulk_memory feature, we lower
+/// this to wasm's memset instruction. When the feature is not present,
+/// we implement it manually.
+fn memset(func: *CodeGen, elem_ty: Type, ptr: WValue, len: WValue, value: WValue) InnerError!void {
+    const mod = func.bin_file.base.comp.module.?;
+    const abi_size = @as(u32, @intCast(elem_ty.abiSize(mod)));
+
+    // When bulk_memory is enabled, we lower it to wasm's memset instruction.
+    // If not, we lower it ourselves.
+    if (std.Target.wasm.featureSetHas(func.target.cpu.features, .bulk_memory) and abi_size == 1) {
+        try func.lowerToStack(ptr);
+        try func.emitWValue(value);
+        try func.emitWValue(len);
+        try func.addExtended(.memory_fill);
+        return;
+    }
+
+    const final_len = switch (len) {
+        .imm32 => |val| WValue{ .imm32 = val * abi_size },
+        .imm64 => |val| WValue{ .imm64 = val * abi_size },
+        else => if (abi_size != 1) blk: {
+            const new_len = try func.ensureAllocLocal(Type.usize);
+            try func.emitWValue(len);
+            switch (func.arch()) {
+                .wasm32 => {
+                    try func.emitWValue(.{ .imm32 = abi_size });
+                    try func.addTag(.i32_mul);
+                },
+                .wasm64 => {
+                    try func.emitWValue(.{ .imm64 = abi_size });
+                    try func.addTag(.i64_mul);
+                },
+                else => unreachable,
+            }
+            try func.addLabel(.local_set, new_len.local.value);
+            break :blk new_len;
+        } else len,
+    };
+
+    var end_ptr = try func.allocLocal(Type.usize);
+    defer end_ptr.free(func);
+    var new_ptr = try func.buildPointerOffset(ptr, 0, .new);
+    defer new_ptr.free(func);
+
+    // get the loop conditional: if current pointer address equals final pointer's address
+    try func.lowerToStack(ptr);
+    try func.emitWValue(final_len);
+    switch (func.arch()) {
+        .wasm32 => try func.addTag(.i32_add),
+        .wasm64 => try func.addTag(.i64_add),
+        else => unreachable,
+    }
+    try func.addLabel(.local_set, end_ptr.local.value);
+
+    // outer block to jump to when loop is done
+    try func.startBlock(.block, wasm.block_empty);
+    try func.startBlock(.loop, wasm.block_empty);
+
+    // check for codition for loop end
+    try func.emitWValue(new_ptr);
+    try func.emitWValue(end_ptr);
+    switch (func.arch()) {
+        .wasm32 => try func.addTag(.i32_eq),
+        .wasm64 => try func.addTag(.i64_eq),
+        else => unreachable,
+    }
+    try func.addLabel(.br_if, 1); // jump out of loop into outer block (finished)
+
+    // store the value at the current position of the pointer
+    try func.store(new_ptr, value, elem_ty, 0);
+
+    // move the pointer to the next element
+    try func.emitWValue(new_ptr);
+    switch (func.arch()) {
+        .wasm32 => {
+            try func.emitWValue(.{ .imm32 = abi_size });
+            try func.addTag(.i32_add);
+        },
+        .wasm64 => {
+            try func.emitWValue(.{ .imm64 = abi_size });
+            try func.addTag(.i64_add);
+        },
+        else => unreachable,
+    }
+    try func.addLabel(.local_set, new_ptr.local.value);
+
+    // end of loop
+    try func.addLabel(.br, 0); // jump to start of loop
+    try func.endBlock();
+    try func.endBlock();
+}
+
 fn airMemcpy(func: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     const mod = func.bin_file.base.comp.module.?;
     const bin_op = func.air.instructions.items(.data)[@intFromEnum(inst)].bin_op;
@@ -5795,6 +5796,11 @@ fn airMemcpy(func: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     try func.memcpy(dst_ptr, src_ptr, len);
 
     func.finishAir(inst, .none, &.{ bin_op.lhs, bin_op.rhs });
+}
+
+fn airMemmove(func: *CodeGen, inst: Air.Inst.Index) InnerError!void {
+    _ = inst;
+    return func.fail("TODO: Implement airMemmove", .{});
 }
 
 fn airRetAddr(func: *CodeGen, inst: Air.Inst.Index) InnerError!void {

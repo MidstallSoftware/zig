@@ -712,6 +712,9 @@ pub const Inst = struct {
         /// source being a pointer-to-array), then it is guaranteed to be
         /// greater than zero.
         memcpy,
+        /// Does basically the same thing as `memcpy`, however it allows for overlap in the dest
+        /// and src pointers.
+        memmove,
 
         /// Uses the `ty_pl` field with payload `Cmpxchg`.
         cmpxchg_weak,
@@ -1462,6 +1465,7 @@ pub fn typeOfIndex(air: *const Air, inst: Air.Inst.Index, ip: *const InternPool)
         .memset,
         .memset_safe,
         .memcpy,
+        .memmove,
         .set_union_tag,
         .prefetch,
         .set_err_return_trace,
@@ -1623,6 +1627,7 @@ pub fn mustLower(air: Air, inst: Air.Inst.Index, ip: *const InternPool) bool {
         .memset,
         .memset_safe,
         .memcpy,
+        .memmove,
         .cmpxchg_weak,
         .cmpxchg_strong,
         .fence,

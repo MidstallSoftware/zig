@@ -962,12 +962,12 @@ pub const Inst = struct {
         /// Implements the `@fieldParentPtr` builtin.
         /// Uses the `pl_node` union field with payload `FieldParentPtr`.
         field_parent_ptr,
-        /// Implements the `@memcpy` builtin.
-        /// Uses the `pl_node` union field with payload `Bin`.
-        memcpy,
         /// Implements the `@memset` builtin.
         /// Uses the `pl_node` union field with payload `Bin`.
         memset,
+        /// Implements the `@memcpy` builtin.
+        /// Uses the `pl_node` union field with payload `Bin`.
+        memcpy,
         /// Implements the `@min` builtin for 2 args.
         /// Uses the `pl_node` union field with payload `Bin`
         min,
@@ -1256,8 +1256,8 @@ pub const Inst = struct {
                 .builtin_call,
                 .field_parent_ptr,
                 .max,
-                .memcpy,
                 .memset,
+                .memcpy,
                 .min,
                 .c_import,
                 .@"resume",
@@ -1355,8 +1355,8 @@ pub const Inst = struct {
                 .@"export",
                 .export_value,
                 .set_runtime_safety,
-                .memcpy,
                 .memset,
+                .memcpy,
                 .check_comptime_control_flow,
                 .@"defer",
                 .defer_err_code,
@@ -1595,7 +1595,11 @@ pub const Inst = struct {
                 => false,
 
                 .extended => switch (data.extended.opcode) {
-                    .fence, .set_cold, .breakpoint => true,
+                    .fence,
+                    .set_cold,
+                    .breakpoint,
+                    .memmove,
+                    => true,
                     else => false,
                 },
             };
@@ -1826,8 +1830,8 @@ pub const Inst = struct {
                 .builtin_call = .pl_node,
                 .field_parent_ptr = .pl_node,
                 .max = .pl_node,
-                .memcpy = .pl_node,
                 .memset = .pl_node,
+                .memcpy = .pl_node,
                 .min = .pl_node,
                 .c_import = .pl_node,
 
@@ -2085,6 +2089,9 @@ pub const Inst = struct {
         /// with a specific value. For instance, this is used for the capture of an `errdefer`.
         /// This should never appear in a body.
         value_placeholder,
+        /// Implements the `@memmove` builtin.
+        /// Uses the `pl_node` union field with payload `Bin`.
+        memmove,
 
         pub const InstData = struct {
             opcode: Extended,
