@@ -1877,6 +1877,9 @@ fn genInst(func: *CodeGen, inst: Air.Inst.Index) InnerError!void {
         .trunc_float => func.airUnaryFloatOp(inst, .trunc),
         .neg => func.airUnaryFloatOp(inst, .neg),
 
+        .pow => func.airPow(inst, false),
+        .powi => func.airPow(inst, true),
+
         .abs => func.airAbs(inst),
 
         .add_with_overflow => func.airAddSubWithOverflow(inst, .add),
@@ -2982,6 +2985,17 @@ fn floatNeg(func: *CodeGen, ty: Type, arg: WValue) InnerError!WValue {
         },
         else => unreachable,
     }
+}
+
+fn airPow(func: *CodeGen, inst: Air.Inst.Index, int: bool) InnerError!void {
+    _ = inst;
+    if (int) {
+        // TODO: value ** int
+    } else {
+        // TODO: value ** float
+    }
+
+    return func.fail("TODO impliment airPow for {}", .{func.target.os.tag});
 }
 
 fn airWrapBinOp(func: *CodeGen, inst: Air.Inst.Index, op: Op) InnerError!void {

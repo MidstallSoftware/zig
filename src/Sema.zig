@@ -1274,6 +1274,7 @@ fn analyzeBodyInner(
                     .work_group_size    => try sema.zirWorkItem(          block, extended, extended.opcode),
                     .work_group_id      => try sema.zirWorkItem(          block, extended, extended.opcode),
                     .in_comptime        => try sema.zirInComptime(        block),
+                    .pow                => try sema.zirPow(               block, extended),
                     // zig fmt: on
 
                     .fence => {
@@ -25251,6 +25252,121 @@ fn zirMemmove(sema: *Sema, block: *Block, inst: Zir.Inst.Extended.InstData) Comp
             .rhs = new_src_ptr,
         } },
     });
+}
+
+fn zirPow(sema: *Sema, block: *Block, inst: Zir.Inst.Extended.InstData) CompileError!Air.Inst.Ref {
+    const mod = sema.mod;
+
+    const extra = sema.code.extraData(Zir.Inst.BinNode, inst.operand).data;
+    const src = LazySrcLoc.nodeOffset(extra.node);
+
+    const val_src: LazySrcLoc = .{ .node_offset_builtin_call_arg0 = extra.node };
+    const power_src: LazySrcLoc = .{ .node_offset_builtin_call_arg1 = extra.node };
+
+    const val = try sema.resolveInst(extra.lhs);
+    const power = try sema.resolveInst(extra.rhs);
+
+    const val_type = sema.typeOf(val);
+    const power_type = sema.typeOf(power);
+
+    try sema.checkFloatType(block, val_src, val_type);
+
+    const power_tag = power_type.zigTypeTag(mod);
+
+    // TODO: Vectors
+    const int_power = switch (power_tag) {
+        .ComptimeInt, .Int => true,
+        .ComptimeFloat, .Float => false,
+        else => return sema.fail(block, power_src, "@pow requires either Float or Int in power, found: {}", .{power_type.fmt(mod)}),
+    };
+
+    const coerced_power = power: {
+        if (int_power) {
+            // in powi, the exponent must be of type i32 or at least be able to coerce into it.
+            break :power try sema.coerce(block, try mod.intType(.signed, 32), power, power_src);
+        } else {
+            break :power try sema.coerce(block, val_type, power, power_src);
+        }
+    };
+
+    const runtime_src = runtime_src: {
+        if (try sema.resolveValue(val)) |val_resolved| {
+            if (try sema.resolveValue(coerced_power)) |power_resolved| {
+                if (!int_power) {
+                    if (!power_type.eql(val_type, mod)) {
+                        const msg = msg: {
+                            const msg = try sema.errMsg(
+                                block,
+                                power_src,
+                                "expected {}, found {}",
+                                .{ val_type.fmt(mod), power_type.fmt(mod) },
+                            );
+
+                            try sema.errNote(
+                                block,
+                                src,
+                                msg,
+                                "when power is float, @pow expects them to be the same type",
+                                .{},
+                            );
+
+                            break :msg msg;
+                        };
+                        return sema.failWithOwnedErrorMsg(block, msg);
+                    }
+                }
+
+                const value = try val_resolved.floatPow(power_resolved, val_type, power_type, mod);
+                return Air.internedToRef(value.toIntern());
+            } else {
+                break :runtime_src power_src;
+            }
+        }
+        break :runtime_src val_src;
+    };
+
+    try sema.requireRuntimeBlock(block, src, runtime_src);
+
+    if (int_power) {
+        // Powi
+        return try block.addInst(.{
+            .tag = .powi,
+            .data = .{ .bin_op = .{
+                .lhs = val,
+                .rhs = coerced_power,
+            } },
+        });
+    } else {
+        // Pow
+        if (!power_type.eql(val_type, mod)) {
+            const msg = msg: {
+                const msg = try sema.errMsg(
+                    block,
+                    power_src,
+                    "expected {}, found {}",
+                    .{ val_type.fmt(mod), power_type.fmt(mod) },
+                );
+
+                try sema.errNote(
+                    block,
+                    src,
+                    msg,
+                    "when power is float, @pow expects them to be the same type",
+                    .{},
+                );
+
+                break :msg msg;
+            };
+            return sema.failWithOwnedErrorMsg(block, msg);
+        }
+        return try block.addInst(.{
+            .tag = .pow,
+            .data = .{ .bin_op = .{
+                .lhs = val,
+                .rhs = coerced_power,
+            } },
+        });
+    }
 }
 
 fn zirBuiltinAsyncCall(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData) CompileError!Air.Inst.Ref {

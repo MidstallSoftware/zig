@@ -1970,6 +1970,9 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
             .sqrt        => try self.airSqrt(inst),
             .neg         => try self.airFloatSign(inst),
 
+            .pow => try self.airPow(inst, false),
+            .powi => try self.airPow(inst, true),
+
             .abs => try self.airAbs(inst),
 
             .add_with_overflow => try self.airAddSubWithOverflow(inst),
@@ -6732,6 +6735,17 @@ fn airUnaryMath(self: *Self, inst: Air.Inst.Index, tag: Air.Inst.Tag) !void {
         }) catch unreachable,
     } }, &.{ty}, &.{.{ .air_ref = un_op }});
     return self.finishAir(inst, result, .{ un_op, .none, .none });
+}
+
+fn airPow(self: *Self, inst: Air.Inst.Index, int: bool) InnerError!void {
+    _ = inst;
+    if (int) {
+        // TODO: value ** int
+    } else {
+        // TODO: value ** float
+    }
+
+    return self.fail("TODO impliment airPow for {}", .{self.target.os.tag});
 }
 
 fn reuseOperand(

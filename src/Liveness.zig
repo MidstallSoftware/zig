@@ -286,6 +286,8 @@ pub fn categorizeOperand(
         .cmp_gte_optimized,
         .cmp_gt_optimized,
         .cmp_neq_optimized,
+        .pow,
+        .powi,
         => {
             const o = air_datas[@intFromEnum(inst)].bin_op;
             if (o.lhs == operand_ref) return matchOperandSmallIndex(l, inst, 0, .none);
@@ -950,6 +952,8 @@ fn analyzeInst(
         .memset_safe,
         .memcpy,
         .memmove,
+        .pow,
+        .powi,
         => {
             const o = inst_datas[@intFromEnum(inst)].bin_op;
             return analyzeOperands(a, pass, data, inst, .{ o.lhs, o.rhs, .none });

@@ -805,6 +805,9 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
             .@"try"          => try self.airTry(inst),
             .try_ptr         => try self.airTryPtr(inst),
 
+            .pow => try self.airPow(inst, false),
+            .powi => try self.airPow(inst, true),
+
             .dbg_var_ptr,
             .dbg_var_val,
             => try self.airDbgVar(inst),
@@ -3554,6 +3557,17 @@ fn airAbs(self: *Self, inst: Air.Inst.Index) !void {
     const ty_op = self.air.instructions.items(.data)[@intFromEnum(inst)].ty_op;
     const result: MCValue = if (self.liveness.isUnused(inst)) .dead else return self.fail("TODO implement airAbs for {}", .{self.target.cpu.arch});
     return self.finishAir(inst, result, .{ ty_op.operand, .none, .none });
+}
+
+fn airPow(self: *Self, inst: Air.Inst.Index, int: bool) InnerError!void {
+    _ = inst;
+    if (int) {
+        // TODO: value ** int
+    } else {
+        // TODO: value ** float
+    }
+
+    return self.fail("TODO impliment airPow for {}", .{self.target.os.tag});
 }
 
 fn airByteSwap(self: *Self, inst: Air.Inst.Index) !void {

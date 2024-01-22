@@ -5024,6 +5024,9 @@ pub const FuncGen = struct {
                 .round        => try self.airUnaryOp(inst, .round),
                 .trunc_float  => try self.airUnaryOp(inst, .trunc),
 
+                .pow => try self.airPow(inst, false),
+                .powi => try self.airPow(inst, true),
+
                 .neg           => try self.airNeg(inst, .normal),
                 .neg_optimized => try self.airNeg(inst, .fast),
 
@@ -9503,6 +9506,38 @@ pub const FuncGen = struct {
         const operand_ty = self.typeOf(un_op);
 
         return self.buildFloatOp(.neg, fast, operand_ty, 1, .{operand});
+    }
+
+    fn airPow(self: *FuncGen, inst: Air.Inst.Index, int: bool) !Builder.Value {
+        const bin_op = self.air.instructions.items(.data)[@intFromEnum(inst)].bin_op;
+        const operand = try self.resolveInst(bin_op.lhs);
+        const power = try self.resolveInst(bin_op.rhs);
+
+        if (int) {
+            return self.wip.callIntrinsic(
+                .normal,
+                .none,
+                .powi,
+                &.{ operand.typeOfWip(&self.wip), power.typeOfWip(&self.wip) },
+                &.{ operand, power },
+                "",
+            );
+        } else {
+            // Must be the same type.
+            const op_ty = operand.typeOfWip(&self.wip);
+            const pow_ty = power.typeOfWip(&self.wip);
+
+            assert(op_ty == pow_ty);
+
+            return self.wip.callIntrinsic(
+                .normal,
+                .none,
+                .pow,
+                &.{op_ty},
+                &.{ operand, power },
+                "",
+            );
+        }
     }
 
     fn airClzCtz(self: *FuncGen, inst: Air.Inst.Index, intrinsic: Builder.Intrinsic) !Builder.Value {

@@ -965,6 +965,7 @@ fn builtinCall(astrl: *AstRlAnnotate, block: ?*Block, ri: ResultInfo, node: Ast.
         .div_trunc,
         .mod,
         .rem,
+        .pow,
         => {
             _ = try astrl.expr(args[0], block, ResultInfo.none);
             _ = try astrl.expr(args[1], block, ResultInfo.none);

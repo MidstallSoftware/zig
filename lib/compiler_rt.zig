@@ -200,6 +200,7 @@ comptime {
     _ = @import("compiler_rt/log.zig");
     _ = @import("compiler_rt/log10.zig");
     _ = @import("compiler_rt/log2.zig");
+    _ = @import("compiler_rt/powf.zig");
     _ = @import("compiler_rt/round.zig");
     _ = @import("compiler_rt/sin.zig");
     _ = @import("compiler_rt/sincos.zig");

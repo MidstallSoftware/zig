@@ -2707,6 +2707,53 @@ pub const Value = struct {
         } })));
     }
 
+    /// Asserts that rhs can fit into i32
+    pub fn floatPow(lhs: Value, rhs: Value, float_type: Type, power_type: Type, mod: *Module) !Value {
+        if (float_type.zigTypeTag(mod) == .Vector) @panic("TODO: floatPow Vector");
+
+        const is_powi = switch (power_type.zigTypeTag(mod)) {
+            .ComptimeInt, .Int => true,
+            .ComptimeFloat, .Float => false,
+            else => unreachable,
+        };
+
+        const target = mod.getTarget();
+        if (is_powi) {
+            // Sema already errors if float_type and power_type aren't the same here.
+
+            var space: BigIntSpace = undefined;
+            const power = rhs.toBigInt(&space, mod);
+            const casted_power = power.to(i32) catch unreachable;
+
+            const storage: InternPool.Key.Float.Storage = switch (float_type.floatBits(target)) {
+                16 => .{ .f16 = @pow(lhs.toFloat(f16, mod), casted_power) },
+                32 => .{ .f32 = @pow(lhs.toFloat(f32, mod), casted_power) },
+                64 => .{ .f64 = @pow(lhs.toFloat(f64, mod), casted_power) },
+                80 => .{ .f80 = @pow(lhs.toFloat(f80, mod), casted_power) },
+                128 => .{ .f128 = @pow(lhs.toFloat(f128, mod), casted_power) },
+                else => unreachable,
+            };
+            return Value.fromInterned((try mod.intern(.{ .float = .{
+                .ty = float_type.toIntern(),
+                .storage = storage,
+            } })));
+        } else {
+            // Sema already errors if float_type and power_type aren't the same here.
+            const storage: InternPool.Key.Float.Storage = switch (float_type.floatBits(target)) {
+                16 => .{ .f16 = @pow(lhs.toFloat(f16, mod), rhs.toFloat(f16, mod)) },
+                32 => .{ .f32 = @pow(lhs.toFloat(f32, mod), rhs.toFloat(f32, mod)) },
+                64 => .{ .f64 = @pow(lhs.toFloat(f64, mod), rhs.toFloat(f64, mod)) },
+                80 => .{ .f80 = @pow(lhs.toFloat(f80, mod), rhs.toFloat(f80, mod)) },
+                128 => .{ .f128 = @pow(lhs.toFloat(f128, mod), rhs.toFloat(f128, mod)) },
+                else => unreachable,
+            };
+            return Value.fromInterned((try mod.intern(.{ .float = .{
+                .ty = float_type.toIntern(),
+                .storage = storage,
+            } })));
+        }
+    }
+
     pub fn floatMod(lhs: Value, rhs: Value, float_type: Type, arena: Allocator, mod: *Module) !Value {
         if (float_type.zigTypeTag(mod) == .Vector) {
             const result_data = try arena.alloc(InternPool.Index, float_type.vectorLen(mod));

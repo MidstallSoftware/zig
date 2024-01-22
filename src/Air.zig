@@ -332,6 +332,12 @@ pub const Inst = struct {
         /// Square root of a floating point number.
         /// Uses the `un_op` field.
         sqrt,
+        /// Return the first operand raised to the specified (positive or negative) power.
+        /// Works with power as Int.
+        powi,
+        /// Return the first operand raised to the specified (positive or negative) power.
+        /// Works with power as Float.
+        pow,
         /// Sine function on a floating point number.
         /// Uses the `un_op` field.
         sin,
@@ -1319,6 +1325,8 @@ pub fn typeOfIndex(air: *const Air, inst: Air.Inst.Index, ip: *const InternPool)
         .div_exact_optimized,
         .rem_optimized,
         .mod_optimized,
+        .pow,
+        .powi,
         => return air.typeOf(datas[@intFromEnum(inst)].bin_op.lhs, ip),
 
         .sqrt,
@@ -1703,6 +1711,8 @@ pub fn mustLower(air: Air, inst: Air.Inst.Index, ip: *const InternPool) bool {
         .byte_swap,
         .bit_reverse,
         .sqrt,
+        .pow,
+        .powi,
         .sin,
         .cos,
         .tan,

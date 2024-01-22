@@ -2090,8 +2090,11 @@ pub const Inst = struct {
         /// This should never appear in a body.
         value_placeholder,
         /// Implements the `@memmove` builtin.
-        /// Uses the `pl_node` union field with payload `Bin`.
+        /// `operand` is a payload index to `BinNode`.
         memmove,
+        /// Implements the `@pow` builtin.
+        /// `operand` is a payload index to `BinNode`.
+        pow,
 
         pub const InstData = struct {
             opcode: Extended,

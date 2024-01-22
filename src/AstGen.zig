@@ -9191,6 +9191,15 @@ fn builtinCall(
         .mod       => return divBuiltin(gz, scope, ri, node, params[0], params[1], .mod),
         .rem       => return divBuiltin(gz, scope, ri, node, params[0], params[1], .rem),
 
+        .pow => { 
+            const result = try gz.addExtendedPayload(.pow, Zir.Inst.BinNode{
+                .node = gz.nodeIndexToRelative(node),
+                .lhs = try expr(gz, scope, .{ .rl = .none }, params[0]),
+                .rhs = try expr(gz, scope, .{ .rl = .none }, params[1]),
+            });
+            return rvalue(gz, ri, result, node);
+        },
+
         .shl_exact => return shiftOp(gz, scope, ri, node, params[0], params[1], .shl_exact),
         .shr_exact => return shiftOp(gz, scope, ri, node, params[0], params[1], .shr_exact),
 

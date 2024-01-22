@@ -3260,6 +3260,9 @@ fn genBodyInner(f: *Function, body: []const Air.Inst.Index) error{ AnalysisFail,
             .prefetch         => try airPrefetch(f, inst),
             .addrspace_cast   => return f.fail("TODO: C backend: implement addrspace_cast", .{}),
 
+            .pow => try airPow(f, inst, false),
+            .powi => try airPow(f, inst, false),
+
             .@"try"  => try airTry(f, inst),
             .try_ptr => try airTryPtr(f, inst),
 
@@ -7388,6 +7391,17 @@ fn unFloatOp(f: *Function, inst: Air.Inst.Index, operand: CValue, ty: Type, oper
     try v.end(f, inst, writer);
 
     return local;
+}
+
+fn airPow(f: *Function, inst: Air.Inst.Index, int: bool) !CValue {
+    _ = inst;
+    if (int) {
+        // TODO: value ** int
+    } else {
+        // TODO: value ** float
+    }
+
+    return f.fail("TODO impliment airPow for C backend", .{});
 }
 
 fn airUnFloatOp(f: *Function, inst: Air.Inst.Index, operation: []const u8) !CValue {

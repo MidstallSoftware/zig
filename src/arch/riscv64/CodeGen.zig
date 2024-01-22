@@ -621,6 +621,9 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
             .mul_add         => try self.airMulAdd(inst),
             .addrspace_cast  => @panic("TODO"),
 
+            .pow => try self.airPow(inst, false),
+            .powi => try self.airPow(inst, true),
+
             .@"try"          => @panic("TODO"),
             .try_ptr         => @panic("TODO"),
 
@@ -1451,6 +1454,17 @@ fn airAbs(self: *Self, inst: Air.Inst.Index) !void {
     const ty_op = self.air.instructions.items(.data)[@intFromEnum(inst)].ty_op;
     const result: MCValue = if (self.liveness.isUnused(inst)) .dead else return self.fail("TODO implement airAbs for {}", .{self.target.cpu.arch});
     return self.finishAir(inst, result, .{ ty_op.operand, .none, .none });
+}
+
+fn airPow(self: *Self, inst: Air.Inst.Index, int: bool) InnerError!void {
+    _ = inst;
+    if (int) {
+        // TODO: value ** int
+    } else {
+        // TODO: value ** float
+    }
+
+    return self.fail("TODO impliment airPow for {}", .{self.target.os.tag});
 }
 
 fn airByteSwap(self: *Self, inst: Air.Inst.Index) !void {

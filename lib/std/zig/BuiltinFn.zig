@@ -95,6 +95,7 @@ pub const Tag = enum {
     reduce,
     src,
     sqrt,
+    pow,
     sin,
     cos,
     tan,
@@ -834,6 +835,12 @@ pub const list = list: {
             .{
                 .tag = .sqrt,
                 .param_count = 1,
+            },
+        },
+        .{
+            "@pow", .{
+                .tag = .pow,
+                .param_count = 2,
             },
         },
         .{

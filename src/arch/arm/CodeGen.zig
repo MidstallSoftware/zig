@@ -788,6 +788,9 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
             .mul_add         => try self.airMulAdd(inst),
             .addrspace_cast  => return self.fail("TODO implement addrspace_cast", .{}),
 
+            .pow => try self.airPow(inst, false),
+            .powi => try self.airPow(inst, true),
+
             .@"try"          => try self.airTry(inst),
             .try_ptr         => try self.airTryPtr(inst),
 
@@ -6062,6 +6065,17 @@ fn airMulAdd(self: *Self, inst: Air.Inst.Index) !void {
         return self.fail("TODO implement airMulAdd for arm", .{});
     };
     return self.finishAir(inst, result, .{ extra.lhs, extra.rhs, pl_op.operand });
+}
+
+fn airPow(self: *Self, inst: Air.Inst.Index, int: bool) InnerError!void {
+    _ = inst;
+    if (int) {
+        // TODO: value ** int
+    } else {
+        // TODO: value ** float
+    }
+
+    return self.fail("TODO impliment airPow for {}", .{self.target.os.tag});
 }
 
 fn airTry(self: *Self, inst: Air.Inst.Index) !void {

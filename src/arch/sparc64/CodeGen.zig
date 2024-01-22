@@ -637,6 +637,9 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
             .@"try"          => try self.airTry(inst),
             .try_ptr         => @panic("TODO try self.airTryPtr(inst)"),
 
+            .pow => @panic("TODO try self.airPow(inst, false)"),
+            .powi => @panic("TODO try self.airPow(inst, true)"),
+
             .dbg_var_ptr,
             .dbg_var_val,
             => try self.airDbgVar(inst),

@@ -613,7 +613,9 @@ const Writer = struct {
             .cmpxchg => try self.writeCmpxchg(stream, extended),
             .ptr_cast_full => try self.writePtrCastFull(stream, extended),
             .ptr_cast_no_dest => try self.writePtrCastNoDest(stream, extended),
-            .memmove => try self.writePlNodeBinExtended(stream, extended),
+            .memmove,
+            .pow,
+            => try self.writePlNodeBinExtended(stream, extended),
         }
     }
 
@@ -1117,6 +1119,14 @@ const Writer = struct {
         try stream.writeAll(") ");
         try self.writeSrc(stream, src);
     }
+
+    // fn writePlNodeUnExtended(self: *Writer, stream: anytype, inst: Zir.Inst.Extended.InstData) !void {
+    //     const extra = self.code.extraData(Zir.Inst.UnNode, inst.operand).data;
+    //     const src = LazySrcLoc.nodeOffset(extra.node);
+    //     try self.writeInstRef(stream, extra.operand);
+    //     try stream.writeAll(") ");
+    //     try self.writeSrc(stream, src);
+    // }
 
     fn writeAtomicLoad(self: *Writer, stream: anytype, inst: Zir.Inst.Index) !void {
         const inst_data = self.code.instructions.items(.data)[@intFromEnum(inst)].pl_node;
