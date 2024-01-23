@@ -640,6 +640,8 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
             .pow => @panic("TODO try self.airPow(inst, false)"),
             .powi => @panic("TODO try self.airPow(inst, true)"),
 
+            .expect => try self.airExpect(inst),
+
             .dbg_var_ptr,
             .dbg_var_val,
             => try self.airDbgVar(inst),
@@ -2670,6 +2672,11 @@ fn airTrunc(self: *Self, inst: Air.Inst.Index) !void {
     };
 
     return self.finishAir(inst, result, .{ ty_op.operand, .none, .none });
+}
+
+fn airExpect(self: *Self, inst: Air.Inst.Index) !void {
+    _ = inst;
+    return self.fail("TODO implement airExpect for {}", .{self.target.os.tag});
 }
 
 fn airTry(self: *Self, inst: Air.Inst.Index) !void {

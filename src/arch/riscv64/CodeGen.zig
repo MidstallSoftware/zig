@@ -624,6 +624,8 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
             .pow => try self.airPow(inst, false),
             .powi => try self.airPow(inst, true),
 
+            .expect => try self.airExpect(inst),
+
             .@"try"          => @panic("TODO"),
             .try_ptr         => @panic("TODO"),
 
@@ -1464,7 +1466,12 @@ fn airPow(self: *Self, inst: Air.Inst.Index, int: bool) InnerError!void {
         // TODO: value ** float
     }
 
-    return self.fail("TODO impliment airPow for {}", .{self.target.os.tag});
+    return self.fail("TODO implement airPow for {}", .{self.target.os.tag});
+}
+
+fn airExpect(self: *Self, inst: Air.Inst.Index) InnerError!void {
+    _ = inst;
+    return self.fail("TODO implement airExpect for {}", .{self.target.os.tag});
 }
 
 fn airByteSwap(self: *Self, inst: Air.Inst.Index) !void {

@@ -2095,6 +2095,9 @@ pub const Inst = struct {
         /// Implements the `@pow` builtin.
         /// `operand` is a payload index to `BinNode`.
         pow,
+        /// Implements the `@expect` builtin.
+        /// `operand` is a payload index to `ExpectNode`.
+        expect,
 
         pub const InstData = struct {
             opcode: Extended,
@@ -2786,6 +2789,13 @@ pub const Inst = struct {
     pub const UnNode = struct {
         node: i32,
         operand: Ref,
+    };
+
+    pub const ExpectNode = struct {
+        node: i32,
+        operand: Ref,
+        expected: Ref,
+        probability: Ref,
     };
 
     pub const ElemPtrImm = struct {

@@ -2204,6 +2204,8 @@ const DeclGen = struct {
 
             .assembly => try self.airAssembly(inst),
 
+            .expect => try self.airExpect(inst),
+
             .call              => try self.airCall(inst, .auto),
             .call_always_tail  => try self.airCall(inst, .always_tail),
             .call_never_tail   => try self.airCall(inst, .never_tail),
@@ -2936,6 +2938,17 @@ const DeclGen = struct {
         const result_ty = self.typeOfIndex(inst);
 
         return try self.cmp(op, result_ty, ty, lhs_id, rhs_id);
+    }
+
+    fn airExpect(self: *DeclGen, inst: Air.Inst.Index) !?IdRef {
+        if (self.liveness.isUnused(inst)) return null;
+        const pl_op = self.air.instructions.items(.data)[@intFromEnum(inst)].pl_op;
+
+        const operand = try self.resolve(pl_op.operand);
+
+        // TODO optimize!
+
+        return operand;
     }
 
     fn bitCast(

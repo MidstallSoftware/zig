@@ -344,6 +344,7 @@ pub fn categorizeOperand(
         .work_item_id,
         .work_group_size,
         .work_group_id,
+        .expect,
         => return .none,
 
         .fence => return .write,
@@ -1073,6 +1074,11 @@ fn analyzeInst(
         => {
             const operand = inst_datas[@intFromEnum(inst)].un_op;
             return analyzeOperands(a, pass, data, inst, .{ operand, .none, .none });
+        },
+
+        .expect => {
+            const pl_op = inst_datas[@intFromEnum(inst)].pl_op;
+            return analyzeOperands(a, pass, data, inst, .{ pl_op.operand, .none, .none });
         },
 
         .ret,

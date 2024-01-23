@@ -1275,6 +1275,7 @@ fn analyzeBodyInner(
                     .work_group_id      => try sema.zirWorkItem(          block, extended, extended.opcode),
                     .in_comptime        => try sema.zirInComptime(        block),
                     .pow                => try sema.zirPow(               block, extended),
+                    .expect             => try sema.zirExpect(            block, extended),
                     // zig fmt: on
 
                     .fence => {
@@ -25369,6 +25370,60 @@ fn zirPow(sema: *Sema, block: *Block, inst: Zir.Inst.Extended.InstData) CompileE
     }
 }
 
+fn zirExpect(sema: *Sema, block: *Block, inst: Zir.Inst.Extended.InstData) CompileError!Air.Inst.Ref {
+    const mod = sema.mod;
+
+    const extra = sema.code.extraData(Zir.Inst.ExpectNode, inst.operand).data;
+
+    const expected_src = LazySrcLoc{ .node_offset_builtin_call_arg1 = extra.node };
+    const prob_src = LazySrcLoc{ .node_offset_builtin_call_arg2 = extra.node };
+
+    const expected = try sema.resolveInst(extra.expected);
+    const operand = try sema.resolveInst(extra.operand);
+    const prob = try sema.resolveInst(extra.probability);
+
+    const coerced_expected = try sema.coerce(
+        block,
+        sema.typeOf(operand),
+        expected,
+        expected_src,
+    );
+
+    // Resolve expected.
+    const expected_val = try sema.resolveValue(coerced_expected) orelse {
+        return sema.fail(block, expected_src, "@expect requires comptime known expected value", .{});
+    };
+
+    // Resolve the prob
+    const prob_val = try sema.resolveValue(prob) orelse {
+        return sema.fail(block, prob_src, "@expect requires comptime known probability", .{});
+    };
+
+    // Force the prob val to be between 0.0 and 1.0
+    const prob_val_clamped = prob_val.toFloat(f32, mod);
+    if (prob_val_clamped < 0.0 or prob_val_clamped > 1.0) {
+        return sema.fail(
+            block,
+            prob_src,
+            "@expect probability must be greater than 0.0 and less than 1.0, found {d}",
+            .{prob_val_clamped},
+        );
+    }
+
+    return try block.addInst(.{
+        .tag = .expect,
+        .data = .{ .pl_op = .{
+            .operand = operand,
+            .payload = try sema.addExtra(
+                Air.Expect{
+                    .expected = expected_val.toIntern(),
+                    .probability = prob_val_clamped,
+                },
+            ),
+        } },
+    });
+}
+
 fn zirBuiltinAsyncCall(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData) CompileError!Air.Inst.Ref {
     const extra = sema.code.extraData(Zir.Inst.UnNode, extended.operand).data;
     const src = LazySrcLoc.nodeOffset(extra.node);
@@ -37898,6 +37953,7 @@ pub fn addExtraAssumeCapacity(sema: *Sema, extra: anytype) u32 {
         sema.air_extra.appendAssumeCapacity(switch (field.type) {
             u32 => @field(extra, field.name),
             i32 => @bitCast(@field(extra, field.name)),
+            f32 => @bitCast(@field(extra, field.name)),
             Air.Inst.Ref, InternPool.Index => @intFromEnum(@field(extra, field.name)),
             else => @compileError("bad field type: " ++ @typeName(field.type)),
         });

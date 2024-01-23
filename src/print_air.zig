@@ -323,6 +323,8 @@ const Writer = struct {
 
             .dbg_block_begin, .dbg_block_end => {},
 
+            .expect => try w.writeExpect(s, inst),
+
             .work_item_id,
             .work_group_size,
             .work_group_id,
@@ -511,6 +513,14 @@ const Writer = struct {
 
         try w.writeOperand(s, inst, 0, reduce.operand);
         try s.print(", {s}", .{@tagName(reduce.operation)});
+    }
+
+    fn writeExpect(w: *Writer, s: anytype, inst: Air.Inst.Index) @TypeOf(s).Error!void {
+        const pl_op = w.air.instructions.items(.data)[@intFromEnum(inst)].pl_op;
+        const expect = w.air.extraData(Air.Expect, pl_op.payload).data;
+
+        try w.writeOperand(s, inst, 0, pl_op.operand);
+        try s.print(", expected {d}, probability {d}", .{ expect.expected, expect.probability });
     }
 
     fn writeCmpVector(w: *Writer, s: anytype, inst: Air.Inst.Index) @TypeOf(s).Error!void {

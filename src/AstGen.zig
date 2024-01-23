@@ -2767,6 +2767,7 @@ fn addEnsureResult(gz: *GenZir, maybe_unused_result: Zir.Inst.Ref, statement: As
                 .set_float_mode,
                 .set_align_stack,
                 .set_cold,
+                .expect,
                 => break :b true,
                 else => break :b false,
             },
@@ -9044,6 +9045,18 @@ fn builtinCall(
                 .operand = order,
             });
             return rvalue(gz, ri, .void_value, node);
+        },
+        .expect => {
+            const probability = try expr(gz, scope, .{ .rl = .{ .ty = .f32_type } }, params[2]);
+
+            const val = try gz.addExtendedPayload(.expect, Zir.Inst.ExpectNode{
+                .node = gz.nodeIndexToRelative(node),
+                .operand = try expr(gz, scope, ri, params[0]),
+                .expected = try expr(gz, scope, ri, params[1]),
+                .probability = probability,
+            });
+
+            return rvalue(gz, ri, val, node);
         },
 
         .src => {

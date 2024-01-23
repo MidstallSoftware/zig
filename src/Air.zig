@@ -859,6 +859,10 @@ pub const Inst = struct {
         /// Operand is unused and set to Ref.none
         work_group_id,
 
+        /// Implements @expect builtin.
+        /// Uses the `expect` field.
+        expect,
+
         pub fn fromCmpOp(op: std.math.CompareOperator, optimized: bool) Tag {
             switch (op) {
                 .lt => return if (optimized) .cmp_lt_optimized else .cmp_lt,
@@ -1269,6 +1273,11 @@ pub const UnionInit = struct {
     init: Inst.Ref,
 };
 
+pub const Expect = struct {
+    expected: InternPool.Index,
+    probability: f32,
+};
+
 pub fn getMainBody(air: Air) []const Air.Inst.Index {
     const body_index = air.extra[@intFromEnum(ExtraIndex.main_block)];
     const extra = air.extraData(Block, body_index);
@@ -1445,6 +1454,8 @@ pub fn typeOfIndex(air: *const Air, inst: Air.Inst.Index, ip: *const InternPool)
         .abs,
         => return datas[@intFromEnum(inst)].ty_op.ty.toType(),
 
+        .expect => return air.typeOf(datas[@intFromEnum(inst)].pl_op.operand, ip),
+
         .loop,
         .br,
         .cond_br,
@@ -1550,6 +1561,7 @@ pub fn extraData(air: Air, comptime T: type, index: usize) struct { data: T, end
             u32 => air.extra[i],
             Inst.Ref => @as(Inst.Ref, @enumFromInt(air.extra[i])),
             i32 => @as(i32, @bitCast(air.extra[i])),
+            f32 => @as(f32, @bitCast(air.extra[i])),
             InternPool.Index => @as(InternPool.Index, @enumFromInt(air.extra[i])),
             else => @compileError("bad field type: " ++ @typeName(field.type)),
         };
@@ -1652,6 +1664,7 @@ pub fn mustLower(air: Air, inst: Air.Inst.Index, ip: *const InternPool) bool {
         .c_va_copy,
         .c_va_end,
         .c_va_start,
+        .expect,
         => true,
 
         .add,

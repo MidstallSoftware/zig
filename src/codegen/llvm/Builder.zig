@@ -5942,7 +5942,10 @@ pub const WipFunction = struct {
         assert(ty.isFunction(self.builder));
         assert(callee.typeOfWip(self).isPointer(self.builder));
         const params = ty.functionParameters(self.builder);
-        for (params, args[0..params.len]) |param, arg_val| assert(param == arg_val.typeOfWip(self));
+
+        for (params, args[0..params.len]) |param, arg_val| {
+            assert(param == arg_val.typeOfWip(self));
+        }
 
         try self.ensureUnusedExtraCapacity(1, Instruction.Call, args.len);
         const instruction = try self.addInst(switch (ret_ty) {

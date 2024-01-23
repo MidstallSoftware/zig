@@ -3261,7 +3261,9 @@ fn genBodyInner(f: *Function, body: []const Air.Inst.Index) error{ AnalysisFail,
             .addrspace_cast   => return f.fail("TODO: C backend: implement addrspace_cast", .{}),
 
             .pow => try airPow(f, inst, false),
-            .powi => try airPow(f, inst, false),
+            .powi => try airPow(f, inst, true),
+
+            .expect => try airExpect(f, inst),
 
             .@"try"  => try airTry(f, inst),
             .try_ptr => try airTryPtr(f, inst),
@@ -7401,7 +7403,17 @@ fn airPow(f: *Function, inst: Air.Inst.Index, int: bool) !CValue {
         // TODO: value ** float
     }
 
-    return f.fail("TODO impliment airPow for C backend", .{});
+    return f.fail("TODO implement airPow for C backend", .{});
+}
+
+fn airExpect(f: *Function, inst: Air.Inst.Index) !CValue {
+    const pl_op = f.air.instructions.items(.data)[@intFromEnum(inst)].pl_op;
+
+    const operand = try f.resolveInst(pl_op.operand);
+
+    // TODO some sort of zig.h platform dependent macro
+
+    return operand;
 }
 
 fn airUnFloatOp(f: *Function, inst: Air.Inst.Index, operation: []const u8) !CValue {

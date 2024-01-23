@@ -5024,8 +5024,10 @@ pub const FuncGen = struct {
                 .round        => try self.airUnaryOp(inst, .round),
                 .trunc_float  => try self.airUnaryOp(inst, .trunc),
 
-                .pow => try self.airPow(inst, false),
-                .powi => try self.airPow(inst, true),
+                .pow  => try self.airPow(inst, false),
+                .powi => try self.airPow(inst, true ),
+
+                .expect => try self.airExpect(inst),
 
                 .neg           => try self.airNeg(inst, .normal),
                 .neg_optimized => try self.airNeg(inst, .fast),
@@ -10341,6 +10343,39 @@ pub const FuncGen = struct {
         const pl_op = self.air.instructions.items(.data)[@intFromEnum(inst)].pl_op;
         const dimension = pl_op.payload;
         return self.amdgcnWorkIntrinsic(dimension, 0, "amdgcn.workgroup.id");
+    }
+
+    fn airExpect(self: *FuncGen, inst: Air.Inst.Index) !Builder.Value {
+        const o = self.dg.object;
+
+        const pl_op = self.air.instructions.items(.data)[@intFromEnum(inst)].pl_op;
+        const expect = self.air.extraData(Air.Expect, pl_op.payload).data;
+
+        const operand = try self.resolveInst(pl_op.operand);
+
+        // The LowerExpectIntrinsic pass only runs in Release builds.
+        const owner_mod = self.dg.ownerModule();
+        if (owner_mod.optimize_mode == .Debug) return operand;
+
+        const expected = try o.lowerValue(expect.expected);
+
+        // We want `@expect` to use a f32 for the probability, while llvm
+        // wants a f64. we cast here to make up for it.
+
+        const prob = try o.builder.doubleConst(expect.probability);
+
+        return try self.wip.callIntrinsic(
+            .normal,
+            .none,
+            .@"expect.with.probability",
+            &.{operand.typeOfWip(&self.wip)},
+            &.{
+                operand,
+                expected.toValue(),
+                prob.toValue(),
+            },
+            "",
+        );
     }
 
     fn getErrorNameTable(self: *FuncGen) Allocator.Error!Builder.Variable.Index {

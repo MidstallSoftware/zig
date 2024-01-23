@@ -322,6 +322,10 @@ fn verifyBody(self: *Verify, body: []const Air.Inst.Index) Error!void {
                 const extra = self.air.extraData(Air.Cmpxchg, ty_pl.payload).data;
                 try self.verifyInstOperands(inst, .{ extra.ptr, extra.expected_value, extra.new_value });
             },
+            .expect => {
+                const pl_op = data[@intFromEnum(inst)].pl_op;
+                try self.verifyInstOperands(inst, .{ pl_op.operand, .none, .none });
+            },
 
             // big tombs
             .aggregate_init => {

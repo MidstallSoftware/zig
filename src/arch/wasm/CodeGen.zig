@@ -1880,6 +1880,8 @@ fn genInst(func: *CodeGen, inst: Air.Inst.Index) InnerError!void {
         .pow => func.airPow(inst, false),
         .powi => func.airPow(inst, true),
 
+        .expect => func.airExpect(inst),
+
         .abs => func.airAbs(inst),
 
         .add_with_overflow => func.airAddSubWithOverflow(inst, .add),
@@ -2995,7 +2997,12 @@ fn airPow(func: *CodeGen, inst: Air.Inst.Index, int: bool) InnerError!void {
         // TODO: value ** float
     }
 
-    return func.fail("TODO impliment airPow for {}", .{func.target.os.tag});
+    return func.fail("TODO implement airPow for {}", .{func.target.os.tag});
+}
+
+fn airExpect(func: *CodeGen, inst: Air.Inst.Index) InnerError!void {
+    _ = inst;
+    return func.fail("TODO implement airExpect for {}", .{func.target.os.tag});
 }
 
 fn airWrapBinOp(func: *CodeGen, inst: Air.Inst.Index, op: Op) InnerError!void {

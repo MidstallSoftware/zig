@@ -83,6 +83,7 @@ pub const Tag = enum {
     select,
     set_align_stack,
     set_cold,
+    expect,
     set_eval_branch_quota,
     set_float_mode,
     set_runtime_safety,
@@ -749,6 +750,13 @@ pub const list = list: {
                 .tag = .set_cold,
                 .param_count = 1,
                 .illegal_outside_function = true,
+            },
+        },
+        .{
+            "@expect",
+            .{
+                .tag = .expect,
+                .param_count = 3,
             },
         },
         .{

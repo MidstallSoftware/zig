@@ -791,6 +791,8 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
             .pow => try self.airPow(inst, false),
             .powi => try self.airPow(inst, true),
 
+            .expect => try self.airExpect(inst),
+
             .@"try"          => try self.airTry(inst),
             .try_ptr         => try self.airTryPtr(inst),
 
@@ -6075,7 +6077,12 @@ fn airPow(self: *Self, inst: Air.Inst.Index, int: bool) InnerError!void {
         // TODO: value ** float
     }
 
-    return self.fail("TODO impliment airPow for {}", .{self.target.os.tag});
+    return self.fail("TODO implement airPow for {}", .{self.target.os.tag});
+}
+
+fn airExpect(self: *Self, inst: Air.Inst.Index) InnerError!void {
+    _ = inst;
+    return self.fail("TODO implement airExpect for {}", .{self.target.os.tag});
 }
 
 fn airTry(self: *Self, inst: Air.Inst.Index) !void {
