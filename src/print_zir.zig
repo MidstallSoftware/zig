@@ -609,6 +609,18 @@ const Writer = struct {
                 try self.writeSrc(stream, src);
             },
 
+            .expect => {
+                const inst_data = self.code.extraData(Zir.Inst.ExpectNode, extended.operand).data;
+                const src = LazySrcLoc.nodeOffset(inst_data.node);
+                try self.writeInstRef(stream, inst_data.operand);
+                try stream.writeAll(", ");
+                try self.writeInstRef(stream, inst_data.expected);
+                try stream.writeAll(", ");
+                try self.writeInstRef(stream, inst_data.probability);
+                try stream.writeAll(")) ");
+                try self.writeSrc(stream, src);
+            },
+
             .builtin_async_call => try self.writeBuiltinAsyncCall(stream, extended),
             .cmpxchg => try self.writeCmpxchg(stream, extended),
             .ptr_cast_full => try self.writePtrCastFull(stream, extended),

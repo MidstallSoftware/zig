@@ -1274,6 +1274,7 @@ fn analyzeBodyInner(
                     .work_group_size    => try sema.zirWorkItem(          block, extended, extended.opcode),
                     .work_group_id      => try sema.zirWorkItem(          block, extended, extended.opcode),
                     .in_comptime        => try sema.zirInComptime(        block),
+                    .expect             => try sema.zirExpect(            block, extended),
                     // zig fmt: on
 
                     .fence => {
@@ -25128,6 +25129,37 @@ fn zirMemset(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!void
     });
 }
 
+fn zirExpect(sema: *Sema, block: *Block, inst: Zir.Inst.Extended.InstData) CompileError!Air.Inst.Ref {
+    const bin_op = sema.code.extraData(Zir.Inst.BinNode, inst.operand).data;
+
+    const expected_src = LazySrcLoc{ .node_offset_builtin_call_arg1 = bin_op.lhs };
+
+    const operand = try sema.resolveInst(bin_op.rhs);
+    const expected = try sema.resolveInst(bin_op.lhs);
+
+    if (!try sema.isComptimeKnown(expected)) return sema.fail(
+        block,
+        expected_src,
+        "@expect expected value must be comptime-known",
+        .{},
+    );
+
+    const coerced_expected = try sema.coerce(
+        block,
+        sema.typeOf(operand),
+        expected,
+        expected_src,
+    );
+
+    return try block.addInst(.{
+        .tag = .expect,
+        .data = .{ .bin_op = .{
+            .rhs = operand,
+            .lhs = coerced_expected,
+        } },
+    });
+}
+
 fn zirBuiltinAsyncCall(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData) CompileError!Air.Inst.Ref {
     const extra = sema.code.extraData(Zir.Inst.UnNode, extended.operand).data;
     const src = LazySrcLoc.nodeOffset(extra.node);
@@ -37657,6 +37689,7 @@ pub fn addExtraAssumeCapacity(sema: *Sema, extra: anytype) u32 {
         sema.air_extra.appendAssumeCapacity(switch (field.type) {
             u32 => @field(extra, field.name),
             i32 => @bitCast(@field(extra, field.name)),
+            f32 => @bitCast(@field(extra, field.name)),
             Air.Inst.Ref, InternPool.Index => @intFromEnum(@field(extra, field.name)),
             else => @compileError("bad field type: " ++ @typeName(field.type)),
         });

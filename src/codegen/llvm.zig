@@ -5024,6 +5024,8 @@ pub const FuncGen = struct {
                 .round        => try self.airUnaryOp(inst, .round),
                 .trunc_float  => try self.airUnaryOp(inst, .trunc),
 
+                .expect => try self.airExpect(inst),
+
                 .neg           => try self.airNeg(inst, .normal),
                 .neg_optimized => try self.airNeg(inst, .fast),
 
@@ -10280,6 +10282,31 @@ pub const FuncGen = struct {
         const pl_op = self.air.instructions.items(.data)[@intFromEnum(inst)].pl_op;
         const dimension = pl_op.payload;
         return self.amdgcnWorkIntrinsic(dimension, 0, "amdgcn.workgroup.id");
+    }
+
+    fn airExpect(self: *FuncGen, inst: Air.Inst.Index) !Builder.Value {
+        const o = self.dg.object;
+        const bin_op = self.air.instructions.items(.data)[@intFromEnum(inst)].bin_op;
+
+        const operand = try self.resolveInst(bin_op.rhs);
+
+        // The LowerExpectIntrinsic pass only runs in Release builds.
+        const owner_mod = self.dg.ownerModule();
+        if (owner_mod.optimize_mode == .Debug) return operand;
+
+        const expected = try o.lowerValue(bin_op.lhs);
+
+        return try self.wip.callIntrinsic(
+            .normal,
+            .none,
+            .expect,
+            &.{operand.typeOfWip(&self.wip)},
+            &.{
+                operand,
+                expected.toValue(),
+            },
+            "",
+        );
     }
 
     fn getErrorNameTable(self: *FuncGen) Allocator.Error!Builder.Variable.Index {

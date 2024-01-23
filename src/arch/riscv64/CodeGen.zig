@@ -619,6 +619,8 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
             .prefetch        => try self.airPrefetch(inst),
             .mul_add         => try self.airMulAdd(inst),
             .addrspace_cast  => @panic("TODO"),
+            
+            .expect => try self.airExpect(inst),
 
             .@"try"          => @panic("TODO"),
             .try_ptr         => @panic("TODO"),
@@ -1450,6 +1452,16 @@ fn airAbs(self: *Self, inst: Air.Inst.Index) !void {
     const ty_op = self.air.instructions.items(.data)[@intFromEnum(inst)].ty_op;
     const result: MCValue = if (self.liveness.isUnused(inst)) .dead else return self.fail("TODO implement airAbs for {}", .{self.target.cpu.arch});
     return self.finishAir(inst, result, .{ ty_op.operand, .none, .none });
+}
+
+fn airExpect(self: *Self, inst: Air.Inst.Index) InnerError!void {
+    const pl_op = self.air.instructions.items(.data)[@intFromEnum(inst)].pl_op;
+
+    const operand = try self.resolveInst(pl_op.operand);
+
+    // TODO: optimize!
+
+    return self.finishAir(inst, operand, .{ .none, .none, .none });
 }
 
 fn airByteSwap(self: *Self, inst: Air.Inst.Index) !void {

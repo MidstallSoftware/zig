@@ -3259,6 +3259,8 @@ fn genBodyInner(f: *Function, body: []const Air.Inst.Index) error{ AnalysisFail,
             .prefetch         => try airPrefetch(f, inst),
             .addrspace_cast   => return f.fail("TODO: C backend: implement addrspace_cast", .{}),
 
+            .expect => try airExpect(f, inst),
+
             .@"try"  => try airTry(f, inst),
             .try_ptr => try airTryPtr(f, inst),
 
@@ -7348,6 +7350,24 @@ fn unFloatOp(f: *Function, inst: Air.Inst.Index, operand: CValue, ty: Type, oper
     try v.end(f, inst, writer);
 
     return local;
+}
+
+fn airExpect(f: *Function, inst: Air.Inst.Index) !CValue {
+    const pl_op = f.air.instructions.items(.data)[@intFromEnum(inst)].pl_op;
+    const expect = f.air.extraData(Air.Expect, pl_op.payload).data;
+
+    const operand = try f.resolveInst(pl_op.operand);
+
+    const expected = try f.resolveInst(Air.internedToRef(expect.expected));
+
+    const writer = f.object.writer();
+    try writer.writeAll("zig_expect(");
+    try f.writeCValue(writer, operand, .FunctionArgument);
+    try writer.writeAll(", ");
+    try f.writeCValue(writer, expected, .FunctionArgument);
+    try writer.print(", {d});", .{expect.probability});
+
+    return operand;
 }
 
 fn airUnFloatOp(f: *Function, inst: Air.Inst.Index, operation: []const u8) !CValue {

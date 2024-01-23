@@ -8428,6 +8428,27 @@ test "main" {
       </p>
       {#header_close#}
 
+      {#header_open|@expect#}
+      <pre>{#syntax#}@expect(value: anytype, expected: @TypeOf(value), probability: f32) @TypeOf(value){#endsyntax}</pre>
+      <p>
+      Provides a hint to the compiler about the probability of {#syntax#}value{#endsyntax#} being {#syntax#}expected{#endsyntax#}.
+      </p>
+      <p>
+      <code>probability</code> must be between 0.0 and 1.0.
+      </p>
+      {#code_begin|test|expect_example#}
+test "expect example" {
+    const x = 10;
+
+    switch (@expect(x, 5, 0.7)) {
+        0 => return, // Take this case with probability 10%
+        3 => return, // Take this case with probability 10%
+        5 => return, // This is the most likely case with probability 70%
+        else => return, // Take this case with probability 10%
+    }
+}
+      {#code_end#}
+
       {#header_open|@export#}
       <pre>{#syntax#}@export(declaration, comptime options: std.builtin.ExportOptions) void{#endsyntax#}</pre>
       <p>

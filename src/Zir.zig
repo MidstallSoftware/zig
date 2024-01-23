@@ -2085,6 +2085,9 @@ pub const Inst = struct {
         /// with a specific value. For instance, this is used for the capture of an `errdefer`.
         /// This should never appear in a body.
         value_placeholder,
+        /// Implements the `@expect` builtin.
+        /// `operand` is a payload index to `ExpectNode`.
+        expect,
 
         pub const InstData = struct {
             opcode: Extended,

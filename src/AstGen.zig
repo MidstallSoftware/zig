@@ -2767,6 +2767,7 @@ fn addEnsureResult(gz: *GenZir, maybe_unused_result: Zir.Inst.Ref, statement: As
                 .set_float_mode,
                 .set_align_stack,
                 .set_cold,
+                .expect,
                 => break :b true,
                 else => break :b false,
             },
@@ -9044,6 +9045,14 @@ fn builtinCall(
                 .operand = order,
             });
             return rvalue(gz, ri, .void_value, node);
+        },
+        .expect => {
+            const val = try gz.addExtendedPayload(.expect, Zir.Inst.BinNode{
+                .node = gz.nodeIndexToRelative(node),
+                .rhs = try expr(gz, scope, ri, params[0]),
+                .lhs = try expr(gz, scope, ri, params[1]),
+            });
+            return rvalue(gz, ri, val, node);
         },
 
         .src => {
