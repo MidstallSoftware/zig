@@ -292,8 +292,8 @@ pub fn main() !void {
                 builder.args = argsRest(args, arg_idx);
                 break;
             } else {
-                std.debug.print("Unrecognized argument: {s}\n\n", .{arg});
-                usageAndErr(builder, false, stderr_stream);
+                std.debug.print("Unrecognized argument: '{s}'. Access the help menu with 'zig build -h'\n", .{arg});
+                std.process.exit(1);
             }
         } else {
             try targets.append(arg);
