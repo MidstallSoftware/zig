@@ -352,7 +352,7 @@ pub const Block = struct {
     runtime_index: Value.RuntimeIndex = .zero,
     inline_block: Zir.Inst.OptionalIndex = .none,
 
-    comptime_reason: ?*const ComptimeReason = null,
+    comptime_reason: ?*const Block.ComptimeReason = null,
     // TODO is_comptime and comptime_reason should probably be merged together.
     is_comptime: bool,
     is_typeof: bool = false,
@@ -381,7 +381,7 @@ pub const Block = struct {
             return_ty: Type,
         },
 
-        fn explain(cr: ComptimeReason, sema: *Sema, msg: ?*Module.ErrorMsg) !void {
+        fn explain(cr: Block.ComptimeReason, sema: *Sema, msg: ?*Module.ErrorMsg) !void {
             const parent = msg orelse return;
             const mod = sema.mod;
             const prefix = "expression is evaluated at comptime because ";
@@ -848,9 +848,80 @@ const InferredAlloc = struct {
     prongs: std.ArrayListUnmanaged(Air.Inst.Index) = .{},
 };
 
-const NeededComptimeReason = struct {
-    needed_comptime_reason: []const u8,
-    block_comptime_reason: ?*const Block.ComptimeReason = null,
+const NeededComptimeReason = union(enum) {
+    needed_comptime_reason: ComptimeReason,
+    block_comptime_reason: *const Block.ComptimeReason,
+
+    // This is for the cases where we don't need to define a whole new enum.
+    override_comptime_reason: [:0]const u8,
+};
+
+const ComptimeReasonMessages = struct {
+    const comptime_branch = "condition in comptime branch must be comptime-known";
+    const try_operand = "try operand inside comptime block must be comptime-known";
+    const function_called_at_comptime = "function being called at comptime must be comptime-known";
+    const alignment = "alignment must be comptime-known";
+    const enum_tag_value = "enum tag value must be comptime-known";
+    const initializer_of_union = "initializer of comptime only union must be comptime-known";
+    const initializer_of_struct = "initializer of comptime only struct must be comptime-known";
+    const array_length = "array length must be comptime-known";
+    const field_name = "field name must be comptime-known";
+    const return_type = "return type must be comptime-known";
+    const address_space = "addrspace must be comptime-known";
+    const link_section = "condition in comptime switch must be comptime-known";
+    const switch_condition = "value stored in comptime field must be comptime-known";
+    const stored_value = "value being casted to 'comptime_int' must be comptime-known";
+    const cast_int = "value being casted to 'comptime_float' must be comptime-known";
+    const cast_float = "linksection must be comptime-known";
+};
+
+const ComptimeReason = enum {
+    ComptimeBranch,
+    TryOperand,
+    FunctionCall,
+    Alignment,
+    EnumTagValue,
+
+    InitializerOfUnion,
+    InitializerOfStruct,
+
+    ArrayLength,
+    FieldName,
+    ReturnType,
+
+    AddressSpace,
+    LinkSection,
+
+    SwitchCondition,
+    StoredValue,
+
+    CastInt,
+    CastFloat,
+
+    fn explain(cr: ComptimeReason, sema: *Sema, block: *Block, src: LazySrcLoc, msg: *Module.ErrorMsg) !void {
+        const message: []const u8 = switch (cr) {
+            // zig fmt: off
+            .ComptimeBranch      => ComptimeReasonMessages.comptime_branch,
+            .TryOperand          => ComptimeReasonMessages.try_operand,
+            .FunctionCall        => ComptimeReasonMessages.function_called_at_comptime,
+            .Alignment           => ComptimeReasonMessages.alignment,
+            .EnumTagValue        => ComptimeReasonMessages.enum_tag_value,
+            .InitializerOfUnion  => ComptimeReasonMessages.initializer_of_union,
+            .InitializerOfStruct => ComptimeReasonMessages.initializer_of_struct,
+            .ArrayLength         => ComptimeReasonMessages.array_length,
+            .FieldName           => ComptimeReasonMessages.field_name,
+            .ReturnType          => ComptimeReasonMessages.return_type,
+            .AddressSpace        => ComptimeReasonMessages.address_space,
+            .SwitchCondition     => ComptimeReasonMessages.switch_condition,
+            .StoredValue         => ComptimeReasonMessages.stored_value,
+            .CastInt             => ComptimeReasonMessages.cast_int,
+            .CastFloat           => ComptimeReasonMessages.cast_float,
+            .LinkSection         => ComptimeReasonMessages.link_section,
+            // zig fmt: on
+        };
+
+        try sema.errNote(block, src, msg, message, .{});
+    }
 };
 
 pub fn deinit(sema: *Sema) void {
@@ -1727,8 +1798,7 @@ fn analyzeBodyInner(
                     extra.data.else_body_len,
                 );
                 const cond = try sema.resolveInstConst(block, cond_src, extra.data.condition, .{
-                    .needed_comptime_reason = "condition in comptime branch must be comptime-known",
-                    .block_comptime_reason = block.comptime_reason,
+                    .needed_comptime_reason = .ComptimeBranch,
                 });
                 const inline_body = if (cond.val.toBool()) then_body else else_body;
 
@@ -1751,8 +1821,7 @@ fn analyzeBodyInner(
                     extra.data.else_body_len,
                 );
                 const cond = try sema.resolveInstConst(block, cond_src, extra.data.condition, .{
-                    .needed_comptime_reason = "condition in comptime branch must be comptime-known",
-                    .block_comptime_reason = block.comptime_reason,
+                    .needed_comptime_reason = .ComptimeBranch,
                 });
                 const inline_body = if (cond.val.toBool()) then_body else else_body;
 
@@ -1784,8 +1853,7 @@ fn analyzeBodyInner(
                 const is_non_err = try sema.analyzeIsNonErrComptimeOnly(block, operand_src, err_union);
                 assert(is_non_err != .none);
                 const is_non_err_val = try sema.resolveConstDefinedValue(block, operand_src, is_non_err, .{
-                    .needed_comptime_reason = "try operand inside comptime block must be comptime-known",
-                    .block_comptime_reason = block.comptime_reason,
+                    .needed_comptime_reason = .TryOperand,
                 });
                 if (is_non_err_val.toBool()) {
                     break :blk try sema.analyzeErrUnionPayload(block, src, err_union_ty, err_union, operand_src, false);
@@ -1810,8 +1878,7 @@ fn analyzeBodyInner(
                 const is_non_err = try sema.analyzeIsNonErrComptimeOnly(block, operand_src, err_union);
                 assert(is_non_err != .none);
                 const is_non_err_val = try sema.resolveConstDefinedValue(block, operand_src, is_non_err, .{
-                    .needed_comptime_reason = "try operand inside comptime block must be comptime-known",
-                    .block_comptime_reason = block.comptime_reason,
+                    .needed_comptime_reason = .TryOperand,
                 });
                 if (is_non_err_val.toBool()) {
                     break :blk try sema.analyzeErrUnionPayloadPtr(block, src, operand, false, false);
@@ -2067,7 +2134,7 @@ fn analyzeAsType(
     const wanted_type = Type.type;
     const coerced_inst = try sema.coerce(block, wanted_type, air_inst, src);
     const val = try sema.resolveConstDefinedValue(block, src, coerced_inst, .{
-        .needed_comptime_reason = "types must be comptime-known",
+        .override_comptime_reason = "types must be comptime-known",
     });
     return val.toType();
 }
@@ -2252,11 +2319,13 @@ fn failWithNeededComptime(sema: *Sema, block: *Block, src: LazySrcLoc, reason: N
     const msg = msg: {
         const msg = try sema.errMsg(block, src, "unable to resolve comptime value", .{});
         errdefer msg.destroy(sema.gpa);
-        try sema.errNote(block, src, msg, "{s}", .{reason.needed_comptime_reason});
 
-        if (reason.block_comptime_reason) |block_comptime_reason| {
-            try block_comptime_reason.explain(sema, msg);
+        switch (reason) {
+            .block_comptime_reason => |bcr| try bcr.explain(sema, msg),
+            .needed_comptime_reason => |ncr| try ncr.explain(sema, block, src, msg),
+            .override_comptime_reason => |message| try sema.errNote(block, src, msg, "{s}", .{message}),
         }
+
         break :msg msg;
     };
     return sema.failWithOwnedErrorMsg(block, msg);
@@ -2637,7 +2706,7 @@ fn analyzeAsAlign(
     air_ref: Air.Inst.Ref,
 ) !Alignment {
     const alignment_big = try sema.analyzeAsInt(block, src, air_ref, align_ty, .{
-        .needed_comptime_reason = "alignment must be comptime-known",
+        .needed_comptime_reason = .Alignment,
     });
     return sema.validateAlign(block, src, alignment_big);
 }
@@ -3116,7 +3185,7 @@ fn zirEnumDecl(
                         .range = .value,
                     }).lazy;
                     _ = try sema.resolveConstDefinedValue(block, value_src, tag_inst, .{
-                        .needed_comptime_reason = "enum tag value must be comptime-known",
+                        .needed_comptime_reason = .EnumTagValue,
                     });
                     unreachable;
                 },
@@ -4712,7 +4781,7 @@ fn validateUnionInit(
         return;
     } else if (try sema.typeRequiresComptime(union_ty)) {
         return sema.failWithNeededComptime(block, field_ptr_data.src(), .{
-            .needed_comptime_reason = "initializer of comptime only union must be comptime-known",
+            .needed_comptime_reason = .InitalizerOfUnion,
         });
     }
 
@@ -4898,7 +4967,7 @@ fn validateStructInit(
                 } else if (require_comptime) {
                     const field_ptr_data = sema.code.instructions.items(.data)[@intFromEnum(field_ptr)].pl_node;
                     return sema.failWithNeededComptime(block, field_ptr_data.src(), .{
-                        .needed_comptime_reason = "initializer of comptime only struct must be comptime-known",
+                        .needed_comptime_reason = .InitializerOfStruct,
                     });
                 } else {
                     struct_is_comptime = false;
@@ -5454,7 +5523,7 @@ fn storeToInferredAllocComptime(
     }
 
     return sema.failWithNeededComptime(block, src, .{
-        .needed_comptime_reason = "value being stored to a comptime variable must be comptime-known",
+        .override_comptime_reason = "value being stored to a comptime variable must be comptime-known",
     });
 }
 
@@ -5462,7 +5531,7 @@ fn zirSetEvalBranchQuota(sema: *Sema, block: *Block, inst: Zir.Inst.Index) Compi
     const inst_data = sema.code.instructions.items(.data)[@intFromEnum(inst)].un_node;
     const src = inst_data.src();
     const quota: u32 = @intCast(try sema.resolveInt(block, src, inst_data.operand, Type.u32, .{
-        .needed_comptime_reason = "eval branch quota must be comptime-known",
+        .override_comptime_reason = "eval branch quota must be comptime-known",
     }));
     sema.branch_quota = @max(sema.branch_quota, quota);
 }
@@ -5620,7 +5689,7 @@ fn zirCompileError(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileErro
     const src = inst_data.src();
     const operand_src: LazySrcLoc = .{ .node_offset_builtin_call_arg0 = inst_data.src_node };
     const msg = try sema.resolveConstString(block, operand_src, inst_data.operand, .{
-        .needed_comptime_reason = "compile error string must be comptime-known",
+        .override_comptime_reason = "compile error string must be comptime-known",
     });
     return sema.fail(block, src, "{s}", .{msg});
 }
@@ -6132,7 +6201,7 @@ fn zirExportValue(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError
     const operand_src: LazySrcLoc = .{ .node_offset_builtin_call_arg0 = inst_data.src_node };
     const options_src: LazySrcLoc = .{ .node_offset_builtin_call_arg1 = inst_data.src_node };
     const operand = try sema.resolveInstConst(block, operand_src, extra.operand, .{
-        .needed_comptime_reason = "export target must be comptime-known",
+        .override_comptime_reason = "export target must be comptime-known",
     });
     const options = try sema.resolveExportOptions(block, options_src, extra.options);
     if (options.linkage == .Internal)
@@ -6280,7 +6349,7 @@ fn zirSetCold(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData) 
     const extra = sema.code.extraData(Zir.Inst.UnNode, extended.operand).data;
     const operand_src: LazySrcLoc = .{ .node_offset_builtin_call_arg0 = extra.node };
     const is_cold = try sema.resolveConstBool(block, operand_src, extra.operand, .{
-        .needed_comptime_reason = "operand to @setCold must be comptime-known",
+        .override_comptime_reason = "operand to @setCold must be comptime-known",
     });
     if (sema.func_index == .none) return; // does nothing outside a function
     ip.funcAnalysis(sema.func_index).is_cold = is_cold;
@@ -6290,7 +6359,7 @@ fn zirSetFloatMode(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstD
     const extra = sema.code.extraData(Zir.Inst.UnNode, extended.operand).data;
     const src: LazySrcLoc = .{ .node_offset_builtin_call_arg0 = extra.node };
     block.float_mode = try sema.resolveBuiltinEnum(block, src, extra.operand, "FloatMode", .{
-        .needed_comptime_reason = "operand to @setFloatMode must be comptime-known",
+        .override_comptime_reason = "operand to @setFloatMode must be comptime-known",
     });
 }
 
@@ -7337,8 +7406,7 @@ fn analyzeCall(
 
     const result: Air.Inst.Ref = if (is_inline_call) res: {
         const func_val = try sema.resolveConstDefinedValue(block, func_src, func, .{
-            .needed_comptime_reason = "function being called at comptime must be comptime-known",
-            .block_comptime_reason = comptime_reason,
+            .needed_comptime_reason = .FunctionCall,
         });
         const prev_fn_index = sema.func_index;
         const module_fn_index = switch (mod.intern_pool.indexToKey(func_val.toIntern())) {
@@ -8290,7 +8358,7 @@ fn zirVectorType(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!
     const elem_type_src: LazySrcLoc = .{ .node_offset_builtin_call_arg1 = inst_data.src_node };
     const extra = sema.code.extraData(Zir.Inst.Bin, inst_data.payload_index).data;
     const len: u32 = @intCast(try sema.resolveInt(block, len_src, extra.lhs, Type.u32, .{
-        .needed_comptime_reason = "vector length must be comptime-known",
+        .override_comptime_reason = "vector length must be comptime-known",
     }));
     const elem_type = try sema.resolveType(block, elem_type_src, extra.rhs);
     try sema.checkVectorElemType(block, elem_type_src, elem_type);
@@ -8310,7 +8378,7 @@ fn zirArrayType(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!A
     const len_src: LazySrcLoc = .{ .node_offset_array_type_len = inst_data.src_node };
     const elem_src: LazySrcLoc = .{ .node_offset_array_type_elem = inst_data.src_node };
     const len = try sema.resolveInt(block, len_src, extra.lhs, Type.usize, .{
-        .needed_comptime_reason = "array length must be comptime-known",
+        .needed_comptime_reason = .ArrayLength,
     });
     const elem_type = try sema.resolveType(block, elem_src, extra.rhs);
     try sema.validateArrayElemType(block, elem_type, elem_src);
@@ -8332,7 +8400,7 @@ fn zirArrayTypeSentinel(sema: *Sema, block: *Block, inst: Zir.Inst.Index) Compil
     const sentinel_src: LazySrcLoc = .{ .node_offset_array_type_sentinel = inst_data.src_node };
     const elem_src: LazySrcLoc = .{ .node_offset_array_type_elem = inst_data.src_node };
     const len = try sema.resolveInt(block, len_src, extra.len, Type.usize, .{
-        .needed_comptime_reason = "array length must be comptime-known",
+        .needed_comptime_reason = .ArrayLength,
     });
     const elem_type = try sema.resolveType(block, elem_src, extra.elem_type);
     try sema.validateArrayElemType(block, elem_type, elem_src);
@@ -8674,7 +8742,7 @@ fn zirEnumFromInt(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError
 
     if (dest_ty.intTagType(mod).zigTypeTag(mod) == .ComptimeInt) {
         return sema.failWithNeededComptime(block, operand_src, .{
-            .needed_comptime_reason = "value being casted to enum with 'comptime_int' tag type must be comptime-known",
+            .override_comptime_reason = "value being casted to enum with 'comptime_int' tag type must be comptime-known",
         });
     }
 
@@ -9080,7 +9148,7 @@ fn zirFunc(
             extra_index += ret_ty_body.len;
 
             const ret_ty_val = try sema.resolveGenericBody(block, ret_ty_src, ret_ty_body, inst, Type.type, .{
-                .needed_comptime_reason = "return type must be comptime-known",
+                .needed_comptime_reason = .ReturnType,
             });
             break :blk ret_ty_val.toType();
         },
@@ -10059,7 +10127,7 @@ fn zirFieldValNamed(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileErr
     const extra = sema.code.extraData(Zir.Inst.FieldNamed, inst_data.payload_index).data;
     const object = try sema.resolveInst(extra.lhs);
     const field_name = try sema.resolveConstStringIntern(block, field_name_src, extra.field_name, .{
-        .needed_comptime_reason = "field name must be comptime-known",
+        .needed_comptime_reason = .FieldName,
     });
     return sema.fieldVal(block, src, object, field_name, field_name_src);
 }
@@ -10074,7 +10142,7 @@ fn zirFieldPtrNamed(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileErr
     const extra = sema.code.extraData(Zir.Inst.FieldNamed, inst_data.payload_index).data;
     const object_ptr = try sema.resolveInst(extra.lhs);
     const field_name = try sema.resolveConstStringIntern(block, field_name_src, extra.field_name, .{
-        .needed_comptime_reason = "field name must be comptime-known",
+        .needed_comptime_reason = .FieldName,
     });
     return sema.fieldPtr(block, src, object_ptr, field_name, field_name_src, false);
 }
@@ -11466,8 +11534,7 @@ fn zirSwitchBlockErrUnion(sema: *Sema, block: *Block, inst: Zir.Inst.Index) Comp
 
     if (child_block.is_comptime) {
         _ = try sema.resolveConstDefinedValue(&child_block, main_operand_src, raw_operand_val, .{
-            .needed_comptime_reason = "condition in comptime switch must be comptime-known",
-            .block_comptime_reason = child_block.comptime_reason,
+            .needed_comptime_reason = .SwitchCondition,
         });
         unreachable;
     }
@@ -12138,8 +12205,7 @@ fn zirSwitchBlock(sema: *Sema, block: *Block, inst: Zir.Inst.Index, operand_is_r
 
     if (child_block.is_comptime) {
         _ = try sema.resolveConstDefinedValue(&child_block, operand_src, operand, .{
-            .needed_comptime_reason = "condition in comptime switch must be comptime-known",
-            .block_comptime_reason = child_block.comptime_reason,
+            .needed_comptime_reason = .SwitchCondition,
         });
         unreachable;
     }
@@ -13538,7 +13604,7 @@ fn zirHasField(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
     const name_src: LazySrcLoc = .{ .node_offset_builtin_call_arg1 = inst_data.src_node };
     const ty = try sema.resolveType(block, ty_src, extra.lhs);
     const field_name = try sema.resolveConstStringIntern(block, name_src, extra.rhs, .{
-        .needed_comptime_reason = "field name must be comptime-known",
+        .needed_comptime_reason = .FieldName,
     });
     try sema.resolveTypeFields(ty);
     const ip = &mod.intern_pool;
@@ -13590,7 +13656,7 @@ fn zirHasDecl(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air
     const rhs_src: LazySrcLoc = .{ .node_offset_builtin_call_arg1 = inst_data.src_node };
     const container_type = try sema.resolveType(block, lhs_src, extra.lhs);
     const decl_name = try sema.resolveConstStringIntern(block, rhs_src, extra.rhs, .{
-        .needed_comptime_reason = "decl name must be comptime-known",
+        .override_comptime_reason = "decl name must be comptime-known",
     });
 
     try sema.checkNamespaceType(block, lhs_src, container_type);
@@ -13643,7 +13709,7 @@ fn zirEmbedFile(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!A
     const inst_data = sema.code.instructions.items(.data)[@intFromEnum(inst)].un_node;
     const operand_src: LazySrcLoc = .{ .node_offset_builtin_call_arg0 = inst_data.src_node };
     const name = try sema.resolveConstString(block, operand_src, inst_data.operand, .{
-        .needed_comptime_reason = "file path name must be comptime-known",
+        .override_comptime_reason = "file path name must be comptime-known",
     });
 
     if (name.len == 0) {
@@ -14430,7 +14496,7 @@ fn getArrayCatInfo(sema: *Sema, block: *Block, src: LazySrcLoc, operand: Air.Ins
                 // on the sentinel value.
                 .Slice, .Many => {
                     const val = try sema.resolveConstDefinedValue(block, src, operand, .{
-                        .needed_comptime_reason = "slice value being concatenated must be comptime-known",
+                        .override_comptime_reason = "slice value being concatenated must be comptime-known",
                     });
                     return Type.ArrayInfo{
                         .elem_type = Type.fromInterned(ptr_info.child),
@@ -19553,7 +19619,7 @@ fn zirPtrType(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air
         extra_i += 1;
         const coerced = try sema.coerce(block, elem_ty, try sema.resolveInst(ref), sentinel_src);
         const val = try sema.resolveConstDefinedValue(block, sentinel_src, coerced, .{
-            .needed_comptime_reason = "pointer sentinel value must be comptime-known",
+            .override_comptime_reason = "pointer sentinel value must be comptime-known",
         });
         break :blk val.toIntern();
     } else .none;
@@ -19563,7 +19629,7 @@ fn zirPtrType(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air
         extra_i += 1;
         const coerced = try sema.coerce(block, Type.u32, try sema.resolveInst(ref), align_src);
         const val = try sema.resolveConstDefinedValue(block, align_src, coerced, .{
-            .needed_comptime_reason = "pointer alignment must be comptime-known",
+            .override_comptime_reason = "pointer alignment must be comptime-known",
         });
         // Check if this happens to be the lazy alignment of our element type, in
         // which case we can make this 0 without resolving it.
@@ -19770,7 +19836,7 @@ fn zirUnionInit(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!A
         return sema.failWithOwnedErrorMsg(block, msg);
     }
     const field_name = try sema.resolveConstStringIntern(block, field_src, extra.field_name, .{
-        .needed_comptime_reason = "name of field being initialized must be comptime-known",
+        .override_comptime_reason = "name of field being initialized must be comptime-known",
     });
     const init = try sema.resolveInst(extra.init);
     return sema.unionInit(block, init, init_src, union_ty, ty_src, field_name, field_src);
@@ -19874,7 +19940,7 @@ fn zirStructInit(
                 if (try resolved_ty.structFieldValueComptime(mod, field_index)) |default_value| {
                     const init_val = (try sema.resolveValue(field_inits[field_index])) orelse {
                         return sema.failWithNeededComptime(block, field_src, .{
-                            .needed_comptime_reason = "value stored in comptime field must be comptime-known",
+                            .needed_comptime_reason = .StoredValue,
                         });
                     };
 
@@ -19931,7 +19997,7 @@ fn zirStructInit(
 
         if (try sema.typeRequiresComptime(resolved_ty)) {
             return sema.failWithNeededComptime(block, field_src, .{
-                .needed_comptime_reason = "initializer of comptime only union must be comptime-known",
+                .needed_comptime_reason = .InitializerOfUnion,
             });
         }
 
@@ -20104,7 +20170,7 @@ fn finishStructInit(
         const decl = mod.declPtr(block.src_decl);
         const field_src = mod.initSrc(init_src.node_offset.x, decl, runtime_index);
         return sema.failWithNeededComptime(block, field_src, .{
-            .needed_comptime_reason = "initializer of comptime only struct must be comptime-known",
+            .needed_comptime_reason = .InitializerOfStruct,
         });
     }
 
@@ -20366,7 +20432,7 @@ fn zirArrayInit(
                     const decl = mod.declPtr(block.src_decl);
                     const elem_src = mod.initSrc(src.node_offset.x, decl, i);
                     return sema.failWithNeededComptime(block, elem_src, .{
-                        .needed_comptime_reason = "value stored in comptime field must be comptime-known",
+                        .needed_comptime_reason = .StoredValue,
                     });
                 };
                 if (!field_val.eql(init_val, elem_ty, mod)) {
@@ -20570,7 +20636,7 @@ fn zirFieldTypeRef(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileErro
     const field_src: LazySrcLoc = .{ .node_offset_builtin_call_arg1 = inst_data.src_node };
     const aggregate_ty = try sema.resolveType(block, ty_src, extra.container_type);
     const field_name = try sema.resolveConstStringIntern(block, field_src, extra.field_name, .{
-        .needed_comptime_reason = "field name must be comptime-known",
+        .needed_comptime_reason = .FieldName,
     });
     return sema.fieldType(block, aggregate_ty, field_name, field_src, ty_src);
 }
@@ -22097,7 +22163,7 @@ fn zirIntFromFloat(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileErro
         return Air.internedToRef(result_val.toIntern());
     } else if (dest_scalar_ty.zigTypeTag(mod) == .ComptimeInt) {
         return sema.failWithNeededComptime(block, operand_src, .{
-            .needed_comptime_reason = "value being casted to 'comptime_int' must be comptime-known",
+            .needed_comptime_reason = .CastInt,
         });
     }
 
@@ -22178,9 +22244,7 @@ fn zirFloatFromInt(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileErro
         const result_val = try operand_val.floatFromIntAdvanced(sema.arena, operand_ty, dest_ty, mod, sema);
         return Air.internedToRef(result_val.toIntern());
     } else if (dest_scalar_ty.zigTypeTag(mod) == .ComptimeFloat) {
-        return sema.failWithNeededComptime(block, operand_src, .{
-            .needed_comptime_reason = "value being casted to 'comptime_float' must be comptime-known",
-        });
+        return sema.failWithNeededComptime(block, operand_src, .{ .needed_comptime_reason = .CastFloat });
     }
 
     try sema.requireRuntimeBlock(block, src, operand_src);
@@ -23886,7 +23950,7 @@ fn zirReduce(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.
     const op_src: LazySrcLoc = .{ .node_offset_builtin_call_arg0 = inst_data.src_node };
     const operand_src: LazySrcLoc = .{ .node_offset_builtin_call_arg1 = inst_data.src_node };
     const operation = try sema.resolveBuiltinEnum(block, op_src, extra.lhs, "ReduceOp", .{
-        .needed_comptime_reason = "@reduce operation must be comptime-known",
+        .override_comptime_reason = "@reduce operation must be comptime-known",
     });
     const operand = try sema.resolveInst(extra.rhs);
     const operand_ty = sema.typeOf(operand);
@@ -23975,7 +24039,7 @@ fn zirShuffle(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air
     });
     mask = try sema.coerce(block, mask_ty, mask, mask_src);
     const mask_val = try sema.resolveConstValue(block, mask_src, mask, .{
-        .needed_comptime_reason = "shuffle mask must be comptime-known",
+        .override_comptime_reason = "shuffle mask must be comptime-known",
     });
     return sema.analyzeShuffle(block, inst_data.src_node, elem_ty, a, b, mask_val, @intCast(mask_len));
 }
@@ -24310,7 +24374,7 @@ fn zirAtomicRmw(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!A
         else => {},
     }
     const order = try sema.resolveAtomicOrder(block, order_src, extra.ordering, .{
-        .needed_comptime_reason = "atomic order of @atomicRmW must be comptime-known",
+        .override_comptime_reason = "atomic order of @atomicRmW must be comptime-known",
     });
 
     if (order == .Unordered) {
@@ -24482,7 +24546,7 @@ fn zirBuiltinCall(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError
     const air_ref = try sema.resolveInst(extra.modifier);
     const modifier_ref = try sema.coerce(block, modifier_ty, air_ref, modifier_src);
     const modifier_val = try sema.resolveConstDefinedValue(block, modifier_src, modifier_ref, .{
-        .needed_comptime_reason = "call modifier must be comptime-known",
+        .override_comptime_reason = "call modifier must be comptime-known",
     });
     var modifier = mod.toEnum(std.builtin.CallModifier, modifier_val);
     switch (modifier) {
@@ -24569,7 +24633,7 @@ fn zirFieldParentPtr(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileEr
 
     const parent_ty = try sema.resolveType(block, ty_src, extra.parent_type);
     const field_name = try sema.resolveConstStringIntern(block, name_src, extra.field_name, .{
-        .needed_comptime_reason = "field name must be comptime-known",
+        .needed_comptime_reason = .FieldName,
     });
     const field_ptr = try sema.resolveInst(extra.field_ptr);
     const field_ptr_ty = sema.typeOf(field_ptr);
@@ -25361,7 +25425,7 @@ fn zirVarExtended(
 
         break :blk ((try sema.resolveValue(init)) orelse {
             return sema.failWithNeededComptime(block, init_src, .{
-                .needed_comptime_reason = "container level variable initializers must be comptime-known",
+                .override_comptime_reason = "container level variable initializers must be comptime-known",
             });
         }).toIntern();
     } else .none;
@@ -25419,7 +25483,7 @@ fn zirFuncFancy(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!A
         extra_index += body.len;
 
         const val = try sema.resolveGenericBody(block, align_src, body, inst, Type.u29, .{
-            .needed_comptime_reason = "alignment must be comptime-known",
+            .needed_comptime_reason = .Alignment,
         });
         if (val.isGenericPoison()) {
             break :blk null;
@@ -25431,7 +25495,7 @@ fn zirFuncFancy(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!A
         const align_ref: Zir.Inst.Ref = @enumFromInt(sema.code.extra[extra_index]);
         extra_index += 1;
         const align_tv = sema.resolveInstConst(block, align_src, align_ref, .{
-            .needed_comptime_reason = "alignment must be comptime-known",
+            .needed_comptime_reason = .Alignment,
         }) catch |err| switch (err) {
             error.GenericPoison => {
                 break :blk null;
@@ -25451,7 +25515,7 @@ fn zirFuncFancy(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!A
 
         const addrspace_ty = try sema.getBuiltinType("AddressSpace");
         const val = try sema.resolveGenericBody(block, addrspace_src, body, inst, addrspace_ty, .{
-            .needed_comptime_reason = "addrspace must be comptime-known",
+            .needed_comptime_reason = .AddressSpace,
         });
         if (val.isGenericPoison()) {
             break :blk null;
@@ -25461,7 +25525,7 @@ fn zirFuncFancy(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!A
         const addrspace_ref: Zir.Inst.Ref = @enumFromInt(sema.code.extra[extra_index]);
         extra_index += 1;
         const addrspace_tv = sema.resolveInstConst(block, addrspace_src, addrspace_ref, .{
-            .needed_comptime_reason = "addrspace must be comptime-known",
+            .needed_comptime_reason = .AddressSpace,
         }) catch |err| switch (err) {
             error.GenericPoison => {
                 break :blk null;
@@ -25479,7 +25543,7 @@ fn zirFuncFancy(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!A
 
         const ty = Type.slice_const_u8;
         const val = try sema.resolveGenericBody(block, section_src, body, inst, ty, .{
-            .needed_comptime_reason = "linksection must be comptime-known",
+            .needed_comptime_reason = .LinkSection,
         });
         if (val.isGenericPoison()) {
             break :blk .generic;
@@ -25489,7 +25553,7 @@ fn zirFuncFancy(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!A
         const section_ref: Zir.Inst.Ref = @enumFromInt(sema.code.extra[extra_index]);
         extra_index += 1;
         const section_name = sema.resolveConstStringIntern(block, section_src, section_ref, .{
-            .needed_comptime_reason = "linksection must be comptime-known",
+            .needed_comptime_reason = .LinkSection,
         }) catch |err| switch (err) {
             error.GenericPoison => {
                 break :blk .generic;
@@ -25537,7 +25601,7 @@ fn zirFuncFancy(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!A
         extra_index += body.len;
 
         const val = try sema.resolveGenericBody(block, ret_src, body, inst, Type.type, .{
-            .needed_comptime_reason = "return type must be comptime-known",
+            .needed_comptime_reason = .ReturnType,
         });
         const ty = val.toType();
         break :blk ty;
@@ -25545,7 +25609,7 @@ fn zirFuncFancy(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!A
         const ret_ty_ref: Zir.Inst.Ref = @enumFromInt(sema.code.extra[extra_index]);
         extra_index += 1;
         const ret_ty_tv = sema.resolveInstConst(block, ret_src, ret_ty_ref, .{
-            .needed_comptime_reason = "return type must be comptime-known",
+            .needed_comptime_reason = .ReturnType,
         }) catch |err| switch (err) {
             error.GenericPoison => {
                 break :blk Type.generic_poison;
@@ -28883,7 +28947,7 @@ fn coerceExtra(
                     if (dest_ty.zigTypeTag(mod) == .ComptimeInt) {
                         if (!opts.report_err) return error.NotCoercible;
                         return sema.failWithNeededComptime(block, inst_src, .{
-                            .needed_comptime_reason = "value being casted to 'comptime_int' must be comptime-known",
+                            .needed_comptime_reason = .CastInt,
                         });
                     }
                     break :float;
@@ -28910,7 +28974,7 @@ fn coerceExtra(
                     if (!opts.report_err) return error.NotCoercible;
                     if (opts.no_cast_to_comptime_int) return inst;
                     return sema.failWithNeededComptime(block, inst_src, .{
-                        .needed_comptime_reason = "value being casted to 'comptime_int' must be comptime-known",
+                        .needed_comptime_reason = .CastInt,
                     });
                 }
 
@@ -28947,9 +29011,7 @@ fn coerceExtra(
                     return Air.internedToRef(result_val.toIntern());
                 } else if (dest_ty.zigTypeTag(mod) == .ComptimeFloat) {
                     if (!opts.report_err) return error.NotCoercible;
-                    return sema.failWithNeededComptime(block, inst_src, .{
-                        .needed_comptime_reason = "value being casted to 'comptime_float' must be comptime-known",
-                    });
+                    return sema.failWithNeededComptime(block, inst_src, .{ .needed_comptime_reason = .CastFloat });
                 }
 
                 // float widening
@@ -28964,9 +29026,7 @@ fn coerceExtra(
                 const val = maybe_inst_val orelse {
                     if (dest_ty.zigTypeTag(mod) == .ComptimeFloat) {
                         if (!opts.report_err) return error.NotCoercible;
-                        return sema.failWithNeededComptime(block, inst_src, .{
-                            .needed_comptime_reason = "value being casted to 'comptime_float' must be comptime-known",
-                        });
+                        return sema.failWithNeededComptime(block, inst_src, .{ .needed_comptime_reason = .CastFloat });
                     }
                     break :int;
                 };
@@ -32077,7 +32137,7 @@ fn coerceTupleToStruct(
         if (struct_type.fieldIsComptime(ip, field_index)) {
             const init_val = (try sema.resolveValue(coerced)) orelse {
                 return sema.failWithNeededComptime(block, field_src, .{
-                    .needed_comptime_reason = "value stored in comptime field must be comptime-known",
+                    .needed_comptime_reason = .StoredValue,
                 });
             };
 
@@ -32208,7 +32268,7 @@ fn coerceTupleToTuple(
         if (default_val != .none) {
             const init_val = (try sema.resolveValue(coerced)) orelse {
                 return sema.failWithNeededComptime(block, field_src, .{
-                    .needed_comptime_reason = "value stored in comptime field must be comptime-known",
+                    .needed_comptime_reason = .StoredValue,
                 });
             };
 

@@ -3594,7 +3594,7 @@ fn semaDecl(mod: *Module, decl_index: Decl.Index) !bool {
     const ty_src: LazySrcLoc = .{ .node_offset_var_decl_ty = 0 };
     const init_src: LazySrcLoc = .{ .node_offset_var_decl_init = 0 };
     const decl_tv = try sema.resolveInstValueAllowVariables(&block_scope, init_src, result_ref, .{
-        .needed_comptime_reason = "global variable initializer must be comptime-known",
+        .override_comptime_reason = "global variable initializer must be comptime-known",
     });
 
     // Note this resolves the type of the Decl, not the value; if this Decl
@@ -3705,7 +3705,7 @@ fn semaDecl(mod: *Module, decl_index: Decl.Index) !bool {
         const linksection_body = decl_bodies.linksection_body orelse break :blk .none;
         const linksection_ref = (try sema.analyzeBodyBreak(&block_scope, linksection_body)).?.operand;
         const bytes = try sema.resolveConstString(&block_scope, section_src, linksection_ref, .{
-            .needed_comptime_reason = "linksection must be comptime-known",
+            .needed_comptime_reason = .LinkSection,
         });
         if (mem.indexOfScalar(u8, bytes, 0) != null) {
             return sema.fail(&block_scope, section_src, "linksection cannot contain null bytes", .{});
