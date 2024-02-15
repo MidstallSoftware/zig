@@ -18,48 +18,50 @@
     flake-utils,
     ...
   } @ inputs:
-    flake-utils.lib.eachSystem flake-utils.lib.allSystems (
-      system: let
-        zigOverlay = f: p: {
-          zig = p.stdenv.mkDerivation {
-            pname = "zig";
-            version = "0.12.0-dev.${self.shortRev or "dirty"}";
+    let
+      zigOverlay = f: p: {
+        zig = p.stdenv.mkDerivation {
+          pname = "zig";
+          version = "0.12.0-dev.${self.shortRev or "dirty"}";
 
-            src = p.lib.cleanSource self;
+          src = p.lib.cleanSource self;
 
-            nativeBuildInputs = [
-              p.cmake
-              p.llvmPackages_17.llvm.dev
-            ];
+          nativeBuildInputs = [
+            p.cmake
+            p.llvmPackages_17.llvm.dev
+          ];
 
-            buildInputs = [
-              p.stdenv.cc.cc.lib
-              p.libxml2
-              p.zlib
-            ] ++ (with p.llvmPackages_17; [
-              libclang
-              lld
-              llvm
-            ]);
+          buildInputs = [
+            p.stdenv.cc.cc.lib
+            p.stdenv.cc.cc.libc_dev.out
+            p.libxml2
+            p.zlib
+          ] ++ (with p.llvmPackages_17; [
+            libclang
+            lld
+            llvm
+          ]);
 
-            env.ZIG_GLOBAL_CACHE_DIR = "$TMPDIR/zig-cache";
+          env.ZIG_GLOBAL_CACHE_DIR = "$TMPDIR/zig-cache";
 
-            postPatch = ''
-              substituteInPlace lib/std/zig/system.zig \
-                --replace "/usr/bin/env" "${p.coreutils}/bin/env"
-            '';
+          postPatch = ''
+            substituteInPlace lib/std/zig/system.zig \
+              --replace "/usr/bin/env" "${p.coreutils}/bin/env"
+          '';
 
-            doInstallCheck = true;
-            installCheckPhase = ''
-              runHook preInstallCheck
+          doInstallCheck = true;
+          installCheckPhase = ''
+            runHook preInstallCheck
 
-              $out/bin/zig test --cache-dir "$TMPDIR/zig-test-cache" -I $src/test $src/test/behavior.zig
+            $out/bin/zig test --cache-dir "$TMPDIR/zig-test-cache" -I $src/test $src/test/behavior.zig
 
-              runHook postInstallCheck
-            '';
-          };
+            runHook postInstallCheck
+          '';
         };
-
+      };
+    in
+    (flake-utils.lib.eachSystem flake-utils.lib.allSystems (
+      system: let
         pkgs = (import nixpkgs {inherit system;}).appendOverlays [
           zigOverlay
         ];
@@ -69,6 +71,7 @@
           nativeBuildInputs = with pkgs;
             [
               stdenv.cc.cc.lib
+              stdenv.cc.cc.libc_dev.out
               cmake
               gdb
               libxml2
@@ -93,5 +96,7 @@
         # For compatibility with older versions of the `nix` binary
         devShell = self.devShells.${system}.default;
       }
-    );
+    )) // {
+      overlays.default = zigOverlay;
+    };
 }
