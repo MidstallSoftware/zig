@@ -6071,6 +6071,9 @@ pub const SendError = error{
 
     /// The local network interface used to reach the destination is down.
     NetworkSubsystemFailed,
+    
+    ConnectionTimedOut,
+    SocketNotConnected,
 } || UnexpectedError;
 
 pub const SendMsgError = SendError || error{
@@ -6090,6 +6093,8 @@ pub const SendMsgError = SendError || error{
     /// The socket is not connected (connection-oriented sockets only).
     SocketNotConnected,
     AddressNotAvailable,
+
+    ConnectionTimedOut,
 };
 
 pub fn sendmsg(
@@ -6818,8 +6823,9 @@ pub fn recvfrom(
     addrlen: ?*socklen_t,
 ) RecvFromError!usize {
     while (true) {
-        const rc = system.recvfrom(sockfd, buf.ptr, buf.len, flags, src_addr, addrlen);
         if (builtin.os.tag == .windows) {
+            const rc = windows.recvfrom(sockfd, buf.ptr, buf.len, flags, src_addr, addrlen);
+
             if (rc == windows.ws2_32.SOCKET_ERROR) {
                 switch (windows.ws2_32.WSAGetLastError()) {
                     .WSANOTINITIALISED => unreachable,
@@ -6837,6 +6843,8 @@ pub fn recvfrom(
                 return @as(usize, @intCast(rc));
             }
         } else {
+            const rc = system.recvfrom(sockfd, buf.ptr, buf.len, flags, src_addr, addrlen);
+
             switch (errno(rc)) {
                 .SUCCESS => return @as(usize, @intCast(rc)),
                 .BADF => unreachable, // always a race condition

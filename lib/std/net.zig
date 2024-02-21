@@ -14,6 +14,16 @@ pub const has_unix_sockets = @hasDecl(os.sockaddr, "un") and
     (builtin.target.os.tag != .windows or
     builtin.os.version_range.windows.isAtLeast(.win10_rs4) orelse false);
 
+pub const iovec = if (builtin.target.os.tag == .windows)
+    os.windows.ws2_32.WSABUF
+else
+    os.iovec;
+
+pub const iovec_const = if (builtin.target.os.tag == .windows)
+    os.windows.ws2_32.WSABUF_CONST
+else
+    os.iovec_const;
+
 pub const IPParseError = error{
     Overflow,
     InvalidEnd,
@@ -1738,8 +1748,8 @@ pub const Stream = struct {
         os.closeSocket(self.handle);
     }
 
-    pub const ReadError = os.ReadError;
-    pub const WriteError = os.WriteError;
+    pub const ReadError = os.RecvFromError || os.ReadError;
+    pub const WriteError = os.SendError || os.WriteError;
 
     pub const Reader = io.Reader(Stream, ReadError, read);
     pub const Writer = io.Writer(Stream, WriteError, write);
@@ -1753,19 +1763,40 @@ pub const Stream = struct {
     }
 
     pub fn read(self: Stream, buffer: []u8) ReadError!usize {
-        if (builtin.os.tag == .windows) {
-            return os.windows.ReadFile(self.handle, buffer, null);
-        }
-
-        return os.read(self.handle, buffer);
+        return os.recv(self.handle, buffer, 0);
     }
 
-    pub fn readv(s: Stream, iovecs: []const os.iovec) ReadError!usize {
+    pub fn readv(s: Stream, iovecs: []const iovec) ReadError!usize {
         if (builtin.os.tag == .windows) {
-            // TODO improve this to use ReadFileScatter
-            if (iovecs.len == 0) return @as(usize, 0);
-            const first = iovecs[0];
-            return os.windows.ReadFile(s.handle, first.iov_base[0..first.iov_len], null);
+            var bytes_read: u32 = undefined;
+            var flags_inout: u32 = 0;
+
+            const rc = os.windows.ws2_32.WSARecv(
+                s.handle,
+                @constCast(iovecs.ptr),
+                @intCast(iovecs.len),
+                &bytes_read,
+                &flags_inout,
+                null,
+                null,
+            );
+
+            if (rc == os.windows.ws2_32.SOCKET_ERROR) {
+                switch (os.windows.ws2_32.WSAGetLastError()) {
+                    .WSANOTINITIALISED => unreachable,
+                    .WSAECONNRESET => return error.ConnectionResetByPeer,
+                    .WSAEINVAL => return error.SocketNotBound,
+                    .WSAEMSGSIZE => return error.MessageTooBig,
+                    .WSAENETDOWN => return error.NetworkSubsystemFailed,
+                    .WSAENOTCONN => return error.SocketNotConnected,
+                    .WSAEWOULDBLOCK => return error.WouldBlock,
+                    .WSAETIMEDOUT => return error.ConnectionTimedOut,
+                    // TODO: handle more errors
+                    else => |err| return os.windows.unexpectedWSAError(err),
+                }
+            } else {
+                return bytes_read;
+            }
         }
 
         return os.readv(s.handle, iovecs);
@@ -1798,11 +1829,7 @@ pub const Stream = struct {
     /// file system thread instead of non-blocking. It needs to be reworked to properly
     /// use non-blocking I/O.
     pub fn write(self: Stream, buffer: []const u8) WriteError!usize {
-        if (builtin.os.tag == .windows) {
-            return os.windows.WriteFile(self.handle, buffer, null);
-        }
-
-        return os.write(self.handle, buffer);
+        return os.send(self.handle, buffer, 0);
     }
 
     pub fn writeAll(self: Stream, bytes: []const u8) WriteError!void {
@@ -1814,7 +1841,38 @@ pub const Stream = struct {
 
     /// See https://github.com/ziglang/zig/issues/7699
     /// See equivalent function: `std.fs.File.writev`.
-    pub fn writev(self: Stream, iovecs: []const os.iovec_const) WriteError!usize {
+    pub fn writev(self: Stream, iovecs: []const iovec_const) WriteError!usize {
+        if (builtin.os.tag == .windows) {
+            var bytes_read: u32 = undefined;
+
+            const rc = os.windows.ws2_32.WSASend(
+                self.handle,
+                @constCast(@ptrCast(iovecs.ptr)),
+                @intCast(iovecs.len),
+                &bytes_read,
+                0,
+                null,
+                null,
+            );
+
+            if (rc == os.windows.ws2_32.SOCKET_ERROR) {
+                switch (os.windows.ws2_32.WSAGetLastError()) {
+                    .WSANOTINITIALISED => unreachable,
+                    .WSAECONNRESET => return error.ConnectionResetByPeer,
+                    .WSAEINVAL => return error.SocketNotConnected,
+                    .WSAEMSGSIZE => return error.MessageTooBig,
+                    .WSAENETDOWN => return error.NetworkSubsystemFailed,
+                    .WSAENOTCONN => return error.SocketNotConnected,
+                    .WSAEWOULDBLOCK => return error.WouldBlock,
+                    .WSAETIMEDOUT => return error.ConnectionTimedOut,
+                    // TODO: handle more errors
+                    else => |err| return os.windows.unexpectedWSAError(err),
+                }
+            } else {
+                return bytes_read;
+            }
+        }
+
         return os.writev(self.handle, iovecs);
     }
 
@@ -1822,7 +1880,7 @@ pub const Stream = struct {
     /// order to handle partial writes from the underlying OS layer.
     /// See https://github.com/ziglang/zig/issues/7699
     /// See equivalent function: `std.fs.File.writevAll`.
-    pub fn writevAll(self: Stream, iovecs: []os.iovec_const) WriteError!void {
+    pub fn writevAll(self: Stream, iovecs: []net.iovec_const) WriteError!void {
         if (iovecs.len == 0) return;
 
         var i: usize = 0;
@@ -1834,7 +1892,7 @@ pub const Stream = struct {
                 if (i >= iovecs.len) return;
             }
             iovecs[i].iov_base += amt;
-            iovecs[i].iov_len -= amt;
+            iovecs[i].iov_len -= @intCast(amt);
         }
     }
 };

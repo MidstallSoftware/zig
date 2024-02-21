@@ -74,7 +74,7 @@ pub const Connection = struct {
             // .tls => conn.tls_client.readAtLeast(conn.stream, buffer, len),
         } catch |err| {
             switch (err) {
-                error.ConnectionResetByPeer, error.BrokenPipe => return error.ConnectionResetByPeer,
+                error.ConnectionResetByPeer => return error.ConnectionResetByPeer,
                 else => return error.UnexpectedReadFailure,
             }
         };

@@ -219,7 +219,7 @@ pub const Connection = struct {
     read_buf: [buffer_size]u8 = undefined,
     write_buf: [buffer_size]u8 = undefined,
 
-    pub fn readvDirectTls(conn: *Connection, buffers: []std.os.iovec) ReadError!usize {
+    pub fn readvDirectTls(conn: *Connection, buffers: []std.net.iovec) ReadError!usize {
         return conn.tls_client.readv(conn.stream, buffers) catch |err| {
             // https://github.com/ziglang/zig/issues/2473
             if (mem.startsWith(u8, @errorName(err), "TlsAlert")) return error.TlsAlert;
@@ -227,13 +227,13 @@ pub const Connection = struct {
             switch (err) {
                 error.TlsConnectionTruncated, error.TlsRecordOverflow, error.TlsDecodeError, error.TlsBadRecordMac, error.TlsBadLength, error.TlsIllegalParameter, error.TlsUnexpectedMessage => return error.TlsFailure,
                 error.ConnectionTimedOut => return error.ConnectionTimedOut,
-                error.ConnectionResetByPeer, error.BrokenPipe => return error.ConnectionResetByPeer,
+                error.ConnectionResetByPeer => return error.ConnectionResetByPeer,
                 else => return error.UnexpectedReadFailure,
             }
         };
     }
 
-    pub fn readvDirect(conn: *Connection, buffers: []std.os.iovec) ReadError!usize {
+    pub fn readvDirect(conn: *Connection, buffers: []std.net.iovec) ReadError!usize {
         if (conn.protocol == .tls) {
             if (disable_tls) unreachable;
 
@@ -242,7 +242,7 @@ pub const Connection = struct {
 
         return conn.stream.readv(buffers) catch |err| switch (err) {
             error.ConnectionTimedOut => return error.ConnectionTimedOut,
-            error.ConnectionResetByPeer, error.BrokenPipe => return error.ConnectionResetByPeer,
+            error.ConnectionResetByPeer => return error.ConnectionResetByPeer,
             else => return error.UnexpectedReadFailure,
         };
     }
@@ -251,7 +251,7 @@ pub const Connection = struct {
     pub fn fill(conn: *Connection) ReadError!void {
         if (conn.read_end != conn.read_start) return;
 
-        var iovecs = [1]std.os.iovec{
+        var iovecs = [1]std.net.iovec{
             .{ .iov_base = &conn.read_buf, .iov_len = conn.read_buf.len },
         };
         const nread = try conn.readvDirect(&iovecs);
@@ -287,8 +287,8 @@ pub const Connection = struct {
             return available_read;
         }
 
-        var iovecs = [2]std.os.iovec{
-            .{ .iov_base = buffer.ptr, .iov_len = buffer.len },
+        var iovecs = [2]std.net.iovec{
+            .{ .iov_base = buffer.ptr, .iov_len = @truncate(buffer.len) },
             .{ .iov_base = &conn.read_buf, .iov_len = conn.read_buf.len },
         };
         const nread = try conn.readvDirect(&iovecs);

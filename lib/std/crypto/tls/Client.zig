@@ -62,7 +62,7 @@ pub const StreamInterface = struct {
     /// The `iovecs` parameter is mutable because so that function may to
     /// mutate the fields in order to handle partial reads from the underlying
     /// stream layer.
-    pub fn readv(this: @This(), iovecs: []std.os.iovec) ReadError!usize {
+    pub fn readv(this: @This(), iovecs: []std.net.iovec) ReadError!usize {
         _ = .{ this, iovecs };
         @panic("unimplemented");
     }
@@ -72,7 +72,7 @@ pub const StreamInterface = struct {
 
     /// Returns the number of bytes read, which may be less than the buffer
     /// space provided. A short read does not indicate end-of-stream.
-    pub fn writev(this: @This(), iovecs: []const std.os.iovec_const) WriteError!usize {
+    pub fn writev(this: @This(), iovecs: []const std.net.iovec_const) WriteError!usize {
         _ = .{ this, iovecs };
         @panic("unimplemented");
     }
@@ -81,7 +81,7 @@ pub const StreamInterface = struct {
     /// space provided, indicating end-of-stream.
     /// The `iovecs` parameter is mutable in case this function needs to mutate
     /// the fields in order to handle partial writes from the underlying layer.
-    pub fn writevAll(this: @This(), iovecs: []std.os.iovec_const) WriteError!usize {
+    pub fn writevAll(this: @This(), iovecs: []std.net.iovec_const) WriteError!usize {
         // This can be implemented in terms of writev, or specialized if desired.
         _ = .{ this, iovecs };
         @panic("unimplemented");
@@ -215,14 +215,14 @@ pub fn init(stream: anytype, ca_bundle: Certificate.Bundle, host: []const u8) In
     } ++ int2(@intCast(out_handshake.len + host_len)) ++ out_handshake;
 
     {
-        var iovecs = [_]std.os.iovec_const{
+        var iovecs = [_]std.net.iovec_const{
             .{
                 .iov_base = &plaintext_header,
-                .iov_len = plaintext_header.len,
+                .iov_len = @intCast(plaintext_header.len),
             },
             .{
                 .iov_base = host.ptr,
-                .iov_len = host.len,
+                .iov_len = @intCast(host.len),
             },
         };
         try stream.writevAll(&iovecs);
@@ -677,9 +677,9 @@ pub fn init(stream: anytype, ca_bundle: Certificate.Bundle, host: []const u8) In
                                     P.AEAD.encrypt(ciphertext, auth_tag, &out_cleartext, ad, nonce, p.client_handshake_key);
 
                                     const both_msgs = client_change_cipher_spec_msg ++ finished_msg;
-                                    var both_msgs_vec = [_]std.os.iovec_const{.{
+                                    var both_msgs_vec = [_]std.net.iovec_const{.{
                                         .iov_base = &both_msgs,
-                                        .iov_len = both_msgs.len,
+                                        .iov_len = @intCast(both_msgs.len),
                                     }};
                                     try stream.writevAll(&both_msgs_vec);
 
@@ -755,7 +755,7 @@ pub fn writeAllEnd(c: *Client, stream: anytype, bytes: []const u8, end: bool) !v
 /// TLS session, or a truncation attack.
 pub fn writeEnd(c: *Client, stream: anytype, bytes: []const u8, end: bool) !usize {
     var ciphertext_buf: [tls.max_ciphertext_record_len * 4]u8 = undefined;
-    var iovecs_buf: [6]std.os.iovec_const = undefined;
+    var iovecs_buf: [6]std.net.iovec_const = undefined;
     var prepared = prepareCiphertextRecord(c, &iovecs_buf, &ciphertext_buf, bytes, .application_data);
     if (end) {
         prepared.iovec_end += prepareCiphertextRecord(
@@ -790,13 +790,13 @@ pub fn writeEnd(c: *Client, stream: anytype, bytes: []const u8, end: bool) !usiz
             if (amt == 0 and (!end or i < iovec_end - 1)) return total_amt;
         }
         iovecs_buf[i].iov_base += amt;
-        iovecs_buf[i].iov_len -= amt;
+        iovecs_buf[i].iov_len -= @intCast(amt);
     }
 }
 
 fn prepareCiphertextRecord(
     c: *Client,
-    iovecs: []std.os.iovec_const,
+    iovecs: []std.net.iovec_const,
     ciphertext_buf: []u8,
     bytes: []const u8,
     inner_content_type: tls.ContentType,
@@ -865,7 +865,7 @@ fn prepareCiphertextRecord(
                 const record = ciphertext_buf[record_start..ciphertext_end];
                 iovecs[iovec_end] = .{
                     .iov_base = record.ptr,
-                    .iov_len = record.len,
+                    .iov_len = @intCast(record.len),
                 };
                 iovec_end += 1;
             }
@@ -885,7 +885,7 @@ pub fn eof(c: Client) bool {
 /// If the number read is less than `len` it means the stream reached the end.
 /// Reaching the end of the stream is not an error condition.
 pub fn readAtLeast(c: *Client, stream: anytype, buffer: []u8, len: usize) !usize {
-    var iovecs = [1]std.os.iovec{.{ .iov_base = buffer.ptr, .iov_len = buffer.len }};
+    var iovecs = [1]std.net.iovec{.{ .iov_base = buffer.ptr, .iov_len = @truncate(buffer.len) }};
     return readvAtLeast(c, stream, &iovecs, len);
 }
 
@@ -908,7 +908,7 @@ pub fn readAll(c: *Client, stream: anytype, buffer: []u8) !usize {
 /// stream is not an error condition.
 /// The `iovecs` parameter is mutable because this function needs to mutate the fields in
 /// order to handle partial reads from the underlying stream layer.
-pub fn readv(c: *Client, stream: anytype, iovecs: []std.os.iovec) !usize {
+pub fn readv(c: *Client, stream: anytype, iovecs: []std.net.iovec) !usize {
     return readvAtLeast(c, stream, iovecs, 1);
 }
 
@@ -919,7 +919,7 @@ pub fn readv(c: *Client, stream: anytype, iovecs: []std.os.iovec) !usize {
 /// Reaching the end of the stream is not an error condition.
 /// The `iovecs` parameter is mutable because this function needs to mutate the fields in
 /// order to handle partial reads from the underlying stream layer.
-pub fn readvAtLeast(c: *Client, stream: anytype, iovecs: []std.os.iovec, len: usize) !usize {
+pub fn readvAtLeast(c: *Client, stream: anytype, iovecs: []std.net.iovec, len: usize) !usize {
     if (c.eof()) return 0;
 
     var off_i: usize = 0;
@@ -933,7 +933,7 @@ pub fn readvAtLeast(c: *Client, stream: anytype, iovecs: []std.os.iovec, len: us
             vec_i += 1;
         }
         iovecs[vec_i].iov_base += amt;
-        iovecs[vec_i].iov_len -= amt;
+        iovecs[vec_i].iov_len -= @intCast(amt);
     }
 }
 
@@ -945,7 +945,7 @@ pub fn readvAtLeast(c: *Client, stream: anytype, iovecs: []std.os.iovec, len: us
 /// function asserts that `eof()` is `false`.
 /// See `readv` for a higher level function that has the same, familiar API as
 /// other read functions, such as `std.fs.File.read`.
-pub fn readvAdvanced(c: *Client, stream: anytype, iovecs: []const std.os.iovec) !usize {
+pub fn readvAdvanced(c: *Client, stream: anytype, iovecs: []const std.net.iovec) !usize {
     var vp: VecPut = .{ .iovecs = iovecs };
 
     // Give away the buffered cleartext we have, if any.
@@ -998,14 +998,14 @@ pub fn readvAdvanced(c: *Client, stream: anytype, iovecs: []const std.os.iovec) 
     c.partial_cleartext_idx = 0;
     const first_iov = c.partially_read_buffer[c.partial_ciphertext_end..];
 
-    var ask_iovecs_buf: [2]std.os.iovec = .{
+    var ask_iovecs_buf: [2]std.net.iovec = .{
         .{
             .iov_base = first_iov.ptr,
-            .iov_len = first_iov.len,
+            .iov_len = @intCast(first_iov.len),
         },
         .{
             .iov_base = &in_stack_buffer,
-            .iov_len = in_stack_buffer.len,
+            .iov_len = @intCast(in_stack_buffer.len),
         },
     };
 
@@ -1352,7 +1352,7 @@ fn SchemeEddsa(comptime scheme: tls.SignatureScheme) type {
 
 /// Abstraction for sending multiple byte buffers to a slice of iovecs.
 const VecPut = struct {
-    iovecs: []const std.os.iovec,
+    iovecs: []const std.net.iovec,
     idx: usize = 0,
     off: usize = 0,
     total: usize = 0,
@@ -1413,11 +1413,11 @@ const VecPut = struct {
 };
 
 /// Limit iovecs to a specific byte size.
-fn limitVecs(iovecs: []std.os.iovec, len: usize) []std.os.iovec {
+fn limitVecs(iovecs: []std.net.iovec, len: usize) []std.net.iovec {
     var bytes_left: usize = len;
     for (iovecs, 0..) |*iovec, vec_i| {
         if (bytes_left <= iovec.iov_len) {
-            iovec.iov_len = bytes_left;
+            iovec.iov_len = @intCast(bytes_left);
             return iovecs[0 .. vec_i + 1];
         }
         bytes_left -= iovec.iov_len;

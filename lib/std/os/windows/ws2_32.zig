@@ -1142,8 +1142,13 @@ pub const sockaddr = extern struct {
 };
 
 pub const WSABUF = extern struct {
-    len: ULONG,
-    buf: [*]u8,
+    iov_len: ULONG,
+    iov_base: [*]u8,
+};
+
+pub const WSABUF_CONST = extern struct {
+    iov_len: ULONG,
+    iov_base: [*]const u8,
 };
 
 pub const msghdr = WSAMSG;
