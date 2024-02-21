@@ -559,3 +559,133 @@ pub const Decoder = struct {
         return d.buf[d.idx..d.cap];
     }
 };
+
+/// The standard TLS client provider interface.
+pub const ClientProvider = struct {
+    /// Stores any persistent state the TLS implementation needs to keep separate from individual connections.
+    context: *anyopaque,
+    vtable: *const VTable,
+
+    pub const HandshakeError = net.Stream.ReadError || net.Stream.WriteError || error{};
+
+    pub const VTable = struct {
+        /// Perform a TLS handshake with the server.
+        handshake: *const fn (
+            context: *anyopaque,
+            /// A temporary allocator for the handshake. Must be used to allocate the context for the returned connection.
+            allocator: mem.Allocator,
+            /// The underlying plaintext network stream.
+            stream: net.Stream,
+            /// The hostname of the server we are connecting to.
+            hostname: []const u8,
+        ) HandshakeError!ClientConnection,
+    };
+};
+
+/// The standard TLS client connection interface.
+pub const ClientConnection = struct {
+    pub const ReadError = net.Stream.ReadError || error{};
+    pub const WriteError = net.Stream.WriteError || error{};
+
+    /// Stores any connection local state the TLS implementation needs, like a session or read/write buffers.
+    context: *anyopaque,
+    vtable: *const VTable,
+
+    pub const VTable = struct {
+        /// Reads from the TLS connection.
+        readv: *const fn (
+            context: *anyopaque,
+            /// The underlying plaintext network stream.
+            stream: net.Stream,
+            /// An io-vector of buffers to read into.
+            buffers: []std.os.iovec,
+        ) ReadError!usize,
+
+        /// Writes to the TLS connection.
+        writev: *const fn (
+            context: *anyopaque,
+            /// The underlying plaintext network stream.
+            stream: net.Stream,
+            /// An io-vector of buffers to write.
+            buffers: []std.os.iovec_const,
+        ) WriteError!usize,
+
+        /// Flushes any buffered data to the TLS connection.
+        flush: *const fn (
+            context: *anyopaque,
+            /// The underlying plaintext network stream.
+            stream: net.Stream,
+        ) WriteError!void,
+
+        /// Close the TLS connection neatly.
+        close: *const fn (
+            context: *anyopaque,
+            /// The underlying plaintext network stream.
+            stream: net.Stream,
+        ) void,
+    };
+};
+
+/// The standard TLS server provider interface.
+pub const ServerProvider = struct {
+    /// Stores any persistent state the TLS implementation needs to keep separate from individual connections.
+    context: *anyopaque,
+    vtable: *const VTable,
+
+    pub const HandshakeError = net.Stream.ReadError || net.Stream.WriteError || error{};
+
+    pub const VTable = struct {
+        /// Perform a TLS handshake with a client.
+        handshake: *const fn (
+            context: *anyopaque,
+            /// A temporary allocator for the handshake. Must be used to allocate the context for the returned connection.
+            allocator: mem.Allocator,
+            /// The underlying plaintext network stream.
+            stream: net.Stream,
+        ) HandshakeError!ServerConnection,
+    };
+};
+
+/// The standard TLS server connection interface.
+pub const ServerConnection = struct {
+    pub const ReadError = net.Stream.ReadError || error{};
+    pub const WriteError = net.Stream.WriteError || error{};
+
+    /// Stores any connection local state the TLS implementation needs, like a session or read/write buffers.
+    context: *anyopaque,
+    vtable: *const VTable,
+
+    pub const VTable = struct {
+        /// Reads from the TLS connection.
+        readv: *const fn (
+            context: *anyopaque,
+            /// The underlying plaintext network stream.
+            stream: net.Stream,
+            /// An io-vector of buffers to read into.
+            buffers: []std.os.iovec,
+        ) ReadError!usize,
+
+        /// Writes to the TLS connection.
+        writev: *const fn (
+            context: *anyopaque,
+            /// The underlying plaintext network stream.
+            stream: net.Stream,
+            /// An io-vector of buffers to write.
+            buffers: []std.os.iovec_const,
+        ) WriteError!usize,
+
+        /// Flushes any buffered data to the TLS connection.
+        flush: *const fn (
+            context: *anyopaque,
+            /// The underlying plaintext network stream.
+            stream: net.Stream,
+        ) WriteError!void,
+
+        /// Close the TLS connection neatly.
+        close: *const fn (
+            context: *anyopaque,
+            /// The underlying plaintext network stream.
+            stream: net.Stream,
+        ) void,
+    };
+};
