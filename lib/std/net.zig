@@ -1895,6 +1895,30 @@ pub const Stream = struct {
             iovecs[i].iov_len -= @intCast(amt);
         }
     }
+
+    /// Attempts to perform a "fast open", where data is sent with the initial SYN packet.
+    /// If not available, falls back to a regular `connect` followed by `writev`, which this is equivalent to.
+    pub fn fastopenWritev(self: Stream, address: Address, iovecs: []const iovec_const) WriteError!usize {
+        if (@hasDecl(os.MSG, "FASTOPEN")) {
+            const msg: std.os.msghdr_const = .{
+                .name = &address.any,
+                .namelen = address.getOsSockLen(),
+                .iov = iovecs.ptr,
+                .iovlen = @intCast(iovecs.len),
+                .control = null,
+                .controllen = 0,
+                .flags = 0,
+            };
+
+            const enable: i32 = 1;
+            if (os.setsockopt(self.handle, os.IPPROTO.TCP, os.TCP.FASTOPEN_CONNECT, &mem.toBytes(enable))) {
+                return try os.sendmsg(self.handle, &msg, os.MSG.FASTOPEN);
+            } else |_| {} // if setsockopt fails, fall back to connect+write
+        }
+
+        try os.connect(self.handle, &address.any, address.getOsSockLen());
+        return try self.writev(iovecs);
+    }
 };
 
 pub const StreamServer = struct {
