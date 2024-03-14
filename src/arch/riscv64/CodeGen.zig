@@ -302,6 +302,7 @@ pub fn generate(
         .prev_di_line = func.lbrace_line,
         .prev_di_column = func.lbrace_column,
         .stack_size = @max(32, function.max_end_stack),
+        .code_offset_mapping = .{},
     };
     defer emit.deinit();
 
@@ -930,21 +931,16 @@ fn binOpRegister(
         .cmp_gt => .cmp_gt,
         else => return self.fail("TODO: binOpRegister {s}", .{@tagName(tag)}),
     };
-    const mir_data: Mir.Inst.Data = switch (tag) {
-        .add,
-        .sub,
-        .cmp_eq,
-        => .{ .r_type = .{
-            .rd = dest_reg,
-            .rs1 = lhs_reg,
-            .rs2 = rhs_reg,
-        } },
-        else => return self.fail("TODO: binOpRegister {s}", .{@tagName(tag)}),
-    };
 
     _ = try self.addInst(.{
         .tag = mir_tag,
-        .data = mir_data,
+        .data = .{
+            .r_type = .{
+                .rd = dest_reg,
+                .rs1 = lhs_reg,
+                .rs2 = rhs_reg,
+            },
+        },
     });
 
     return MCValue{ .register = dest_reg };
@@ -2015,8 +2011,6 @@ fn airCondBr(self: *Self, inst: Air.Inst.Index) !void {
         var item = self.branch_stack.pop();
         item.deinit(self.gpa);
     }
-
-    return self.finishAir(inst, .unreach, .{ .none, .none, .none });
 }
 
 fn condBr(self: *Self, cond_ty: Type, condition: MCValue) !Mir.Inst.Index {
@@ -2033,7 +2027,7 @@ fn condBr(self: *Self, cond_ty: Type, condition: MCValue) !Mir.Inst.Index {
             .b_type = .{
                 .rs1 = reg,
                 .rs2 = .zero,
-                .imm12 = 0, // patched later.
+                .inst = undefined,
             },
         },
     });
@@ -2237,8 +2231,11 @@ fn airSwitch(self: *Self, inst: Air.Inst.Index) !void {
 fn performReloc(self: *Self, inst: Mir.Inst.Index) !void {
     const tag = self.mir_instructions.items(.tag)[inst];
 
+    const next_inst: u32 = @intCast(self.mir_instructions.len);
+
     switch (tag) {
-        .beq => self.mir_instructions.items(.data)[inst].b_type.imm12 = @intCast(inst),
+        .beq => self.mir_instructions.items(.data)[inst].b_type.inst = next_inst,
+        .jal => self.mir_instructions.items(.data)[inst].j_type.inst = next_inst,
         else => return self.fail("TODO: performReloc {s}", .{@tagName(tag)}),
     }
 }
@@ -2284,7 +2281,7 @@ fn brVoid(self: *Self, block: Air.Inst.Index) !void {
         .data = .{
             .j_type = .{
                 .rd = .ra,
-                .imm21 = undefined, // populated later through performReloc
+                .inst = undefined,
             },
         },
     }));
@@ -2468,6 +2465,9 @@ fn genSetStack(self: *Self, ty: Type, stack_offset: u32, src_val: MCValue) Inner
             }
         },
         .stack_offset, .load_symbol => {
+            if (true)
+                return self.fail("TODO: genSetStack {s}", .{@tagName(src_val)});
+
             if (abi_size <= 8) {
                 const reg = try self.copyToTmpRegister(ty, src_val);
                 return self.genSetStack(ty, stack_offset, MCValue{ .register = reg });
