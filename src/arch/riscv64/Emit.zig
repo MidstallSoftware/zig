@@ -34,9 +34,6 @@ stack_size: u32,
 /// For forward branches: stores the code offset of the branch
 /// instruction
 code_offset_mapping: std.AutoHashMapUnmanaged(Mir.Inst.Index, usize) = .{},
-/// For every forward branch, maps the target instruction to a list of
-/// branches which branch to this target instruction
-branch_forward_origins: std.AutoHashMapUnmanaged(Mir.Inst.Index, std.ArrayListUnmanaged(Mir.Inst.Index)) = .{},
 
 const log = std.log.scoped(.emit);
 
@@ -111,12 +108,7 @@ pub fn emitMir(
 pub fn deinit(emit: *Emit) void {
     const comp = emit.bin_file.comp;
     const gpa = comp.gpa;
-    var iter = emit.branch_forward_origins.valueIterator();
-    while (iter.next()) |origin_list| {
-        origin_list.deinit(gpa);
-    }
 
-    emit.branch_forward_origins.deinit(gpa);
     emit.code_offset_mapping.deinit(gpa);
     emit.* = undefined;
 }
@@ -191,12 +183,16 @@ fn mirBType(emit: *Emit, inst: Mir.Inst.Index) !void {
     const tag = emit.mir.instructions.items(.tag)[inst];
     const b_type = emit.mir.instructions.items(.data)[inst].b_type;
 
+    const offset = @as(i64, @intCast(emit.code_offset_mapping.get(b_type.inst).?)) - @as(i64, @intCast(emit.code.items.len));
+
     switch (tag) {
         .beq => {
-            const offset = @as(i64, @intCast(emit.code_offset_mapping.get(b_type.inst).?)) - @as(i64, @intCast(emit.code.items.len));
             log.debug("beq: {} offset={}", .{ inst, offset });
-
             try emit.writeInstruction(Instruction.beq(b_type.rs1, b_type.rs2, @intCast(offset)));
+        },
+        .bne => {
+            log.debug("bne: {} offset={}", .{ inst, offset });
+            try emit.writeInstruction(Instruction.bne(b_type.rs1, b_type.rs2, @intCast(offset)));
         },
         else => unreachable,
     }
@@ -236,11 +232,11 @@ fn mirJType(emit: *Emit, inst: Mir.Inst.Index) !void {
     const tag = emit.mir.instructions.items(.tag)[inst];
     const j_type = emit.mir.instructions.items(.data)[inst].j_type;
 
+    const offset = @as(i64, @intCast(emit.code_offset_mapping.get(j_type.inst).?)) - @as(i64, @intCast(emit.code.items.len));
+
     switch (tag) {
         .jal => {
-            const offset = @as(i64, @intCast(emit.code_offset_mapping.get(j_type.inst).?)) - @as(i64, @intCast(emit.code.items.len));
             log.debug("jal: {} offset={}", .{ inst, offset });
-
             try emit.writeInstruction(Instruction.jal(j_type.rd, @intCast(offset)));
         },
         else => unreachable,
@@ -328,12 +324,8 @@ fn mirPsuedo(emit: *Emit, inst: Mir.Inst.Index) !void {
         },
 
         .j => {
-            const target = data.inst;
-            const offset: i12 = @intCast(emit.code.items.len);
-            _ = target;
-
-            try emit.writeInstruction(Instruction.jal(.s0, offset));
-            unreachable; // TODO: mirPsuedo j
+            const offset = @as(i64, @intCast(emit.code_offset_mapping.get(data.inst).?)) - @as(i64, @intCast(emit.code.items.len));
+            try emit.writeInstruction(Instruction.jal(.s0, @intCast(offset)));
         },
 
         else => unreachable,
@@ -425,21 +417,26 @@ fn isLoad(tag: Mir.Inst.Tag) bool {
     };
 }
 
-fn isBranch(tag: Mir.Inst.Tag) bool {
+pub fn isBranch(tag: Mir.Inst.Tag) bool {
     return switch (tag) {
         .beq => true,
         .bne => true,
         .jal => true,
+        .j => true,
         else => false,
     };
 }
 
-fn branchTarget(emit: *Emit, inst: Mir.Inst.Index) Mir.Inst.Index {
+pub fn branchTarget(emit: *Emit, inst: Mir.Inst.Index) Mir.Inst.Index {
     const tag = emit.mir.instructions.items(.tag)[inst];
+    const data = emit.mir.instructions.items(.data)[inst];
 
     switch (tag) {
-        .beq => return emit.mir.instructions.items(.data)[inst].b_type.inst,
-        .jal => return emit.mir.instructions.items(.data)[inst].j_type.inst,
+        .bne,
+        .beq,
+        => return data.b_type.inst,
+        .jal => return data.j_type.inst,
+        .j => return data.inst,
         else => std.debug.panic("branchTarget {s}", .{@tagName(tag)}),
     }
 }
@@ -447,17 +444,19 @@ fn branchTarget(emit: *Emit, inst: Mir.Inst.Index) Mir.Inst.Index {
 fn instructionSize(emit: *Emit, inst: Mir.Inst.Index) usize {
     const tag = emit.mir.instructions.items(.tag)[inst];
 
-    switch (tag) {
+    return switch (tag) {
         .dbg_line,
         .dbg_epilogue_begin,
         .dbg_prologue_end,
-        .abs,
-        .psuedo_epilogue,
-        .psuedo_prologue,
-        => return 0,
-        // Currently Mir instructions always map to single machine instruction.
-        else => return 4,
-    }
+        => 0,
+
+        .psuedo_epilogue => 12, // 3 * 4
+        .psuedo_prologue => 16, // 4 * 4
+
+        .abs => 12, // 3 * 4
+
+        else => 4,
+    };
 }
 
 fn lowerMir(emit: *Emit) !void {
@@ -483,41 +482,16 @@ fn lowerMir(emit: *Emit) !void {
 
         if (isBranch(tag)) {
             const target_inst = emit.branchTarget(inst);
-
-            // Forward branch
-            if (target_inst > inst) {
-                // Remember the branch instruction index
-                try emit.code_offset_mapping.put(gpa, inst, 0);
-
-                if (emit.branch_forward_origins.getPtr(target_inst)) |origin_list| {
-                    try origin_list.append(gpa, inst);
-                } else {
-                    var origin_list: std.ArrayListUnmanaged(Mir.Inst.Index) = .{};
-                    try origin_list.append(gpa, inst);
-                    try emit.branch_forward_origins.put(gpa, target_inst, origin_list);
-                }
-            }
-
             try emit.code_offset_mapping.put(gpa, target_inst, 0);
         }
     }
-
-    // Further passes: Until all branches are lowered, interate
-    // through all instructions and calculate new offsets and
-    // potentially new branch types
     var current_code_offset: usize = 0;
 
     for (0..mir_tags.len) |index| {
         const inst = @as(u32, @intCast(index));
-
-        // If this instruction contained in the code offset
-        // mapping (when it is a target of a branch or if it is a
-        // forward branch), update the code offset
         if (emit.code_offset_mapping.getPtr(inst)) |offset| {
             offset.* = current_code_offset;
         }
-
-        // Increment code offset
         current_code_offset += emit.instructionSize(inst);
     }
 }
