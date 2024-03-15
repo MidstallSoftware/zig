@@ -943,6 +943,8 @@ fn binOpRegister(
         },
     });
 
+    // generate the struct for OF checks
+
     return MCValue{ .register = dest_reg };
 }
 
