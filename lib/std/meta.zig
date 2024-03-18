@@ -57,10 +57,9 @@ test stringToEnum {
 }
 
 /// Returns the alignment of type T.
-/// Note that if T is a pointer or function type the result is different than
-/// the one returned by @alignOf(T).
+/// Note that if T is a pointer type the result is different than the one
+/// returned by @alignOf(T).
 /// If T is a pointer type the alignment of the type it points to is returned.
-/// If T is a function type the alignment a target-dependent value is returned.
 pub fn alignment(comptime T: type) comptime_int {
     return switch (@typeInfo(T)) {
         .Optional => |info| switch (@typeInfo(info.child)) {
@@ -68,7 +67,6 @@ pub fn alignment(comptime T: type) comptime_int {
             else => @alignOf(T),
         },
         .Pointer => |info| info.alignment,
-        .Fn => |info| info.alignment,
         else => @alignOf(T),
     };
 }
@@ -80,7 +78,8 @@ test alignment {
     try testing.expect(alignment([]align(1) u8) == 1);
     try testing.expect(alignment([]align(2) u8) == 2);
     try testing.expect(alignment(fn () void) > 0);
-    try testing.expect(alignment(fn () align(128) void) == 128);
+    try testing.expect(alignment(*const fn () void) > 0);
+    try testing.expect(alignment(*align(128) const fn () void) == 128);
 }
 
 /// Given a parameterized type (array, vector, pointer, optional), returns the "child type".
@@ -269,12 +268,12 @@ test containerLayout {
         a: u8,
     };
 
-    try testing.expect(containerLayout(S1) == .Auto);
-    try testing.expect(containerLayout(S2) == .Packed);
-    try testing.expect(containerLayout(S3) == .Extern);
-    try testing.expect(containerLayout(U1) == .Auto);
-    try testing.expect(containerLayout(U2) == .Packed);
-    try testing.expect(containerLayout(U3) == .Extern);
+    try testing.expect(containerLayout(S1) == .auto);
+    try testing.expect(containerLayout(S2) == .@"packed");
+    try testing.expect(containerLayout(S3) == .@"extern");
+    try testing.expect(containerLayout(U1) == .auto);
+    try testing.expect(containerLayout(U2) == .@"packed");
+    try testing.expect(containerLayout(U3) == .@"extern");
 }
 
 /// Instead of this function, prefer to use e.g. `@typeInfo(foo).Struct.decls`
@@ -1025,7 +1024,7 @@ fn CreateUniqueTuple(comptime N: comptime_int, comptime types: [N]type) type {
     return @Type(.{
         .Struct = .{
             .is_tuple = true,
-            .layout = .Auto,
+            .layout = .auto,
             .decls = &.{},
             .fields = &tuple_fields,
         },
