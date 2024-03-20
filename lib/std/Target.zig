@@ -488,6 +488,7 @@ pub const xtensa = @import("Target/xtensa.zig");
 
 pub const Abi = enum {
     none,
+    nulibc,
     gnu,
     gnuabin32,
     gnuabi64,
