@@ -1657,7 +1657,7 @@ fn make(step: *Step, prog_node: *std.Progress.Node) !void {
     const zig_args = try self.getZigArguments();
     defer b.allocator.free(zig_args);
 
-    const maybe_output_bin_path = try step.evalZigProcess(zig_args.items, prog_node);
+    const maybe_output_bin_path = try step.evalZigProcess(zig_args, prog_node);
 
     // Update generated files
     if (maybe_output_bin_path) |output_bin_path| {
