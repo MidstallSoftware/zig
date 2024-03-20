@@ -169,7 +169,7 @@ pub fn targetTriple(allocator: Allocator, target: std.Target) ![]const u8 {
     try llvm_triple.append('-');
 
     const llvm_abi = switch (target.abi) {
-        .none => "unknown",
+        .none, .nulibc => "unknown",
         .gnu => "gnu",
         .gnuabin32 => "gnuabin32",
         .gnuabi64 => "gnuabi64",
