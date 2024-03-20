@@ -226,6 +226,7 @@ fn libCGenericName(target: std.Target) [:0]const u8 {
         else => {},
     }
     switch (target.abi) {
+        .nulibc => return "nulibc",
         .gnu,
         .gnuabin32,
         .gnuabi64,
