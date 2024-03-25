@@ -798,23 +798,57 @@ fn airFpext(self: *Self, inst: Air.Inst.Index) !void {
 }
 
 fn airIntCast(self: *Self, inst: Air.Inst.Index) !void {
-    const ty_op = self.air.instructions.items(.data)[@intFromEnum(inst)].ty_op;
-    if (self.liveness.isUnused(inst))
-        return self.finishAir(inst, .dead, .{ ty_op.operand, .none, .none });
-
     const mod = self.bin_file.comp.module.?;
-    const operand_ty = self.typeOf(ty_op.operand);
-    const operand = try self.resolveInst(ty_op.operand);
-    const info_a = operand_ty.intInfo(mod);
-    const info_b = self.typeOfIndex(inst).intInfo(mod);
-    if (info_a.signedness != info_b.signedness)
-        return self.fail("TODO gen intcast sign safety in semantic analysis", .{});
+    const ty_op = self.air.instructions.items(.data)[@intFromEnum(inst)].ty_op;
+    const src_ty = self.typeOf(ty_op.operand);
+    const dst_ty = self.typeOfIndex(inst);
 
-    if (info_a.bits == info_b.bits)
-        return self.finishAir(inst, operand, .{ ty_op.operand, .none, .none });
+    const result: MCValue = result: {
+        const dst_abi_size: u32 = @intCast(dst_ty.abiSize(mod));
 
-    return self.fail("TODO implement intCast for {}", .{self.target.cpu.arch});
-    // return self.finishAir(inst, result, .{ ty_op.operand, .none, .none });
+        const src_int_info = src_ty.intInfo(mod);
+        const dst_int_info = dst_ty.intInfo(mod);
+        const extend = switch (src_int_info.signedness) {
+            .signed => dst_int_info,
+            .unsigned => src_int_info,
+        }.signedness;
+
+        _ = dst_abi_size;
+        _ = extend;
+
+        const min_ty = if (dst_int_info.bits < src_int_info.bits) dst_ty else src_ty;
+
+        const src_mcv = try self.resolveInst(ty_op.operand);
+
+        const src_storage_bits: u16 = switch (src_mcv) {
+            .register => 64,
+            .stack_offset => src_int_info.bits,
+            else => return self.fail("airIntCast from {s}", .{@tagName(src_mcv)}),
+        };
+
+        const dst_mcv = if (dst_int_info.bits <= src_storage_bits and
+            math.divCeil(u16, dst_int_info.bits, 64) catch unreachable ==
+            math.divCeil(u32, src_storage_bits, 64) catch unreachable and
+            self.reuseOperand(inst, ty_op.operand, 0, src_mcv)) src_mcv else dst: {
+            const dst_mcv = try self.allocRegOrMem(inst, true);
+            try self.setValue(min_ty, dst_mcv, src_mcv);
+            break :dst dst_mcv;
+        };
+
+        if (dst_int_info.bits <= src_int_info.bits) {
+            break :result dst_mcv;
+        }
+
+        if (dst_int_info.bits > 64 or src_int_info.bits > 64) {
+            break :result null; // TODO
+        }
+
+        break :result dst_mcv;
+    } orelse return self.fail("TODO implement airIntCast from {} to {}", .{
+        src_ty.fmt(mod), dst_ty.fmt(mod),
+    });
+
+    return self.finishAir(inst, result, .{ ty_op.operand, .none, .none });
 }
 
 fn airTrunc(self: *Self, inst: Air.Inst.Index) !void {
@@ -3446,4 +3480,8 @@ fn typeOf(self: *Self, inst: Air.Inst.Ref) Type {
 fn typeOfIndex(self: *Self, inst: Air.Inst.Index) Type {
     const mod = self.bin_file.comp.module.?;
     return self.air.typeOfIndex(inst, &mod.intern_pool);
+}
+
+fn hasFeature(self: *Self, feature: Target.riscv.Feature) bool {
+    return Target.riscv.featureSetHas(self.target.cpu.features, feature);
 }
