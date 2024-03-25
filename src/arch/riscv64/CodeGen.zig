@@ -1115,7 +1115,9 @@ fn binOpImm(
         .shr => .srli,
         .cmp_gte => .cmp_imm_gte,
         .cmp_eq => .cmp_imm_eq,
+        .cmp_lte => .cmp_imm_lte,
         .add => .addi,
+        .sub => .addiw,
         else => return self.fail("TODO: binOpImm {s}", .{@tagName(tag)}),
     };
 
@@ -1125,6 +1127,7 @@ fn binOpImm(
         .srli,
         .addi,
         .cmp_imm_eq,
+        .cmp_imm_lte,
         => {
             _ = try self.addInst(.{
                 .tag = mir_tag,
@@ -1134,6 +1137,18 @@ fn binOpImm(
                     .imm12 = math.cast(i12, rhs.immediate) orelse {
                         return self.fail("TODO: binOpImm larger than i12 i_type payload", .{});
                     },
+                } },
+            });
+        },
+        .addiw => {
+            _ = try self.addInst(.{
+                .tag = mir_tag,
+                .data = .{ .i_type = .{
+                    .rd = dest_reg,
+                    .rs1 = lhs_reg,
+                    .imm12 = -(math.cast(i12, rhs.immediate) orelse {
+                        return self.fail("TODO: binOpImm larger than i12 i_type payload", .{});
+                    }),
                 } },
             });
         },
@@ -1181,7 +1196,16 @@ fn airAddSat(self: *Self, inst: Air.Inst.Index) !void {
 
 fn airSubWrap(self: *Self, inst: Air.Inst.Index) !void {
     const bin_op = self.air.instructions.items(.data)[@intFromEnum(inst)].bin_op;
-    const result: MCValue = if (self.liveness.isUnused(inst)) .dead else return self.fail("TODO implement subwrap for {}", .{self.target.cpu.arch});
+    const result: MCValue = if (self.liveness.isUnused(inst)) .dead else result: {
+        // RISCV arthemtic instructions already wrap, so this is simply a sub binOp with
+        // no overflow checks.
+        const lhs = try self.resolveInst(bin_op.lhs);
+        const rhs = try self.resolveInst(bin_op.rhs);
+        const lhs_ty = self.typeOf(bin_op.lhs);
+        const rhs_ty = self.typeOf(bin_op.rhs);
+
+        break :result try self.binOp(.sub, inst, lhs, rhs, lhs_ty, rhs_ty);
+    };
     return self.finishAir(inst, result, .{ bin_op.lhs, bin_op.rhs, .none });
 }
 
