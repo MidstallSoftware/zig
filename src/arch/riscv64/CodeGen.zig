@@ -9,7 +9,6 @@ const Emit = @import("Emit.zig");
 const Liveness = @import("../../Liveness.zig");
 const Type = @import("../../type.zig").Type;
 const Value = @import("../../Value.zig");
-const TypedValue = @import("../../TypedValue.zig");
 const link = @import("../../link.zig");
 const Module = @import("../../Module.zig");
 const InternPool = @import("../../InternPool.zig");
@@ -3709,12 +3708,7 @@ fn resolveInst(self: *Self, inst: Air.Inst.Ref) InnerError!MCValue {
     if (!inst_ty.hasRuntimeBits(mod))
         return MCValue{ .none = {} };
 
-    const inst_index = inst.toIndex() orelse {
-        return self.genTypedValue(.{
-            .ty = inst_ty,
-            .val = (try self.air.value(inst, mod)).?,
-        });
-    };
+    const inst_index = inst.toIndex() orelse return self.genTypedValue((try self.air.value(inst, mod)).?);
 
     return self.getResolvedInstValue(inst_index);
 }
@@ -3731,12 +3725,12 @@ fn getResolvedInstValue(self: *Self, inst: Air.Inst.Index) MCValue {
     }
 }
 
-fn genTypedValue(self: *Self, typed_value: TypedValue) InnerError!MCValue {
+fn genTypedValue(self: *Self, val: Value) InnerError!MCValue {
     const mod = self.bin_file.comp.module.?;
     const result = try codegen.genTypedValue(
         self.bin_file,
         self.src_loc,
-        typed_value,
+        val,
         mod.funcOwnerDeclIndex(self.func_index),
     );
     const mcv: MCValue = switch (result) {
