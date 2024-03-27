@@ -2,8 +2,8 @@ const std = @import("../std.zig");
 const assert = std.debug.assert;
 const builtin = @import("builtin");
 const maxInt = std.math.maxInt;
-const iovec = std.os.iovec;
-const iovec_const = std.os.iovec_const;
+const iovec = std.posix.iovec;
+const iovec_const = std.posix.iovec_const;
 const timezone = std.c.timezone;
 
 extern "c" fn ___errno() *c_int;
@@ -875,7 +875,7 @@ pub const SIG = struct {
 /// Renamed from `sigaction` to `Sigaction` to avoid conflict with the syscall.
 pub const Sigaction = extern struct {
     pub const handler_fn = *align(1) const fn (c_int) callconv(.C) void;
-    pub const sigaction_fn = *const fn (c_int, *const siginfo_t, ?*const anyopaque) callconv(.C) void;
+    pub const sigaction_fn = *const fn (c_int, *const siginfo_t, ?*anyopaque) callconv(.C) void;
 
     /// signal options
     flags: c_uint,
@@ -917,7 +917,7 @@ pub const siginfo_t = extern struct {
             zone: zoneid_t,
         },
         fault: extern struct {
-            addr: ?*anyopaque,
+            addr: *allowzero anyopaque,
             trapno: c_int,
             pc: ?*anyopaque,
         },

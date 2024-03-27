@@ -17,7 +17,7 @@ const Liveness = @import("Liveness.zig");
 const Module = @import("Module.zig");
 const InternPool = @import("InternPool.zig");
 const Type = @import("type.zig").Type;
-const TypedValue = @import("TypedValue.zig");
+const Value = @import("Value.zig");
 const LlvmObject = @import("codegen/llvm.zig").Object;
 
 /// When adding a new field, remember to update `hashAddSystemLibs`.
@@ -254,7 +254,7 @@ pub const File = struct {
                         try emit.directory.handle.copyFile(emit.sub_path, emit.directory.handle, tmp_sub_path, .{});
                         try emit.directory.handle.rename(tmp_sub_path, emit.sub_path);
                         switch (builtin.os.tag) {
-                            .linux => std.os.ptrace(std.os.linux.PTRACE.ATTACH, pid, 0, 0) catch |err| {
+                            .linux => std.posix.ptrace(std.os.linux.PTRACE.ATTACH, pid, 0, 0) catch |err| {
                                 log.warn("ptrace failure: {s}", .{@errorName(err)});
                             },
                             .macos => base.cast(MachO).?.ptraceAttach(pid) catch |err| {
@@ -305,7 +305,7 @@ pub const File = struct {
 
                 if (base.child_pid) |pid| {
                     switch (builtin.os.tag) {
-                        .linux => std.os.ptrace(std.os.linux.PTRACE.DETACH, pid, 0, 0) catch |err| {
+                        .linux => std.posix.ptrace(std.os.linux.PTRACE.DETACH, pid, 0, 0) catch |err| {
                             log.warn("ptrace failure: {s}", .{@errorName(err)});
                         },
                         else => return error.HotSwapUnavailableOnHostOperatingSystem,
@@ -376,14 +376,14 @@ pub const File = struct {
     /// Called from within the CodeGen to lower a local variable instantion as an unnamed
     /// constant. Returns the symbol index of the lowered constant in the read-only section
     /// of the final binary.
-    pub fn lowerUnnamedConst(base: *File, tv: TypedValue, decl_index: InternPool.DeclIndex) UpdateDeclError!u32 {
+    pub fn lowerUnnamedConst(base: *File, val: Value, decl_index: InternPool.DeclIndex) UpdateDeclError!u32 {
         if (build_options.only_c) @compileError("unreachable");
         switch (base.tag) {
             .spirv => unreachable,
             .c => unreachable,
             .nvptx => unreachable,
             inline else => |t| {
-                return @fieldParentPtr(t.Type(), "base", base).lowerUnnamedConst(tv, decl_index);
+                return @fieldParentPtr(t.Type(), "base", base).lowerUnnamedConst(val, decl_index);
             },
         }
     }

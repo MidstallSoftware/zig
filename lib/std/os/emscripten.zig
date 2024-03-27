@@ -1,8 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const wasi = std.os.wasi;
-const iovec = std.os.iovec;
-const iovec_const = std.os.iovec_const;
+const iovec = std.posix.iovec;
+const iovec_const = std.posix.iovec_const;
 const c = std.c;
 
 pub const FILE = c.FILE;
@@ -696,7 +696,7 @@ pub const SIG = struct {
 
 pub const Sigaction = extern struct {
     pub const handler_fn = *align(1) const fn (c_int) callconv(.C) void;
-    pub const sigaction_fn = *const fn (c_int, *const siginfo_t, ?*const anyopaque) callconv(.C) void;
+    pub const sigaction_fn = *const fn (c_int, *const siginfo_t, ?*anyopaque) callconv(.C) void;
 
     handler: extern union {
         handler: ?handler_fn,
@@ -738,7 +738,7 @@ const siginfo_fields_union = extern union {
         },
     },
     sigfault: extern struct {
-        addr: *anyopaque,
+        addr: *allowzero anyopaque,
         addr_lsb: i16,
         first: extern union {
             addr_bnd: extern struct {

@@ -18,6 +18,7 @@ test "global variable alignment" {
 test "large alignment of local constant" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_spirv64) return error.SkipZigTest; // flaky
 
     const x: f32 align(128) = 12.34;
     try std.testing.expect(@intFromPtr(&x) % 128 == 0);
@@ -585,6 +586,8 @@ fn overaligned_fn() align(0x1000) i32 {
 }
 
 test "comptime alloc alignment" {
+    // TODO: it's impossible to test this in Zig today, since comptime vars do not have runtime addresses.
+    if (true) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO

@@ -102,7 +102,6 @@ link_errors: std.ArrayListUnmanaged(link.File.ErrorMsg) = .{},
 lld_errors: std.ArrayListUnmanaged(LldError) = .{},
 
 work_queue: std.fifo.LinearFifo(Job, .Dynamic),
-anon_work_queue: std.fifo.LinearFifo(Job, .Dynamic),
 
 /// These jobs are to invoke the Clang compiler to create an object file, which
 /// gets linked with the Compilation.
@@ -1137,7 +1136,7 @@ fn addModuleTableToCacheHash(
     root_mod: *Package.Module,
     main_mod: *Package.Module,
     hash_type: union(enum) { path_bytes, files: *Cache.Manifest },
-) (error{OutOfMemory} || std.os.GetCwdError)!void {
+) (error{OutOfMemory} || std.process.GetCwdError)!void {
     var seen_table: std.AutoArrayHashMapUnmanaged(*Package.Module, void) = .{};
     defer seen_table.deinit(gpa);
 
@@ -1382,7 +1381,6 @@ pub fn create(gpa: Allocator, arena: Allocator, options: CreateOptions) !*Compil
                 .global_zir_cache = global_zir_cache,
                 .local_zir_cache = local_zir_cache,
                 .emit_h = emit_h,
-                .tmp_hack_arena = std.heap.ArenaAllocator.init(gpa),
                 .error_limit = error_limit,
                 .llvm_object = null,
             };
@@ -1418,7 +1416,6 @@ pub fn create(gpa: Allocator, arena: Allocator, options: CreateOptions) !*Compil
             .emit_llvm_ir = options.emit_llvm_ir,
             .emit_llvm_bc = options.emit_llvm_bc,
             .work_queue = std.fifo.LinearFifo(Job, .Dynamic).init(gpa),
-            .anon_work_queue = std.fifo.LinearFifo(Job, .Dynamic).init(gpa),
             .c_object_work_queue = std.fifo.LinearFifo(*CObject, .Dynamic).init(gpa),
             .win32_resource_work_queue = if (build_options.only_core_functionality) {} else std.fifo.LinearFifo(*Win32Resource, .Dynamic).init(gpa),
             .astgen_work_queue = std.fifo.LinearFifo(*Module.File, .Dynamic).init(gpa),
@@ -1841,7 +1838,6 @@ pub fn destroy(comp: *Compilation) void {
     if (comp.module) |zcu| zcu.deinit();
     comp.cache_use.deinit();
     comp.work_queue.deinit();
-    comp.anon_work_queue.deinit();
     comp.c_object_work_queue.deinit();
     if (!build_options.only_core_functionality) {
         comp.win32_resource_work_queue.deinit();
@@ -1999,7 +1995,7 @@ pub fn update(comp: *Compilation, main_progress_node: *std.Progress.Node) !void 
 
             const is_hit = man.hit() catch |err| {
                 const i = man.failed_file_index orelse return err;
-                const pp = man.files.items[i].prefixed_path orelse return err;
+                const pp = man.files.keys()[i].prefixed_path;
                 const prefix = man.cache.prefixes()[pp.prefix];
                 return comp.setMiscFailure(
                     .check_whole_cache,
@@ -2741,7 +2737,7 @@ const Header = extern struct {
 /// saved, such as the target and most CLI flags. A cache hit will only occur
 /// when subsequent compiler invocations use the same set of flags.
 pub fn saveState(comp: *Compilation) !void {
-    var bufs_list: [19]std.os.iovec_const = undefined;
+    var bufs_list: [19]std.posix.iovec_const = undefined;
     var bufs_len: usize = 0;
 
     const lf = comp.bin_file orelse return;
@@ -2808,7 +2804,7 @@ pub fn saveState(comp: *Compilation) !void {
     try af.finish();
 }
 
-fn addBuf(bufs_list: []std.os.iovec_const, bufs_len: *usize, buf: []const u8) void {
+fn addBuf(bufs_list: []std.posix.iovec_const, bufs_len: *usize, buf: []const u8) void {
     const i = bufs_len.*;
     bufs_len.* = i + 1;
     bufs_list[i] = .{
@@ -3355,15 +3351,8 @@ pub fn performAllTheWork(
         mod.sema_prog_node = undefined;
     };
 
-    // In this main loop we give priority to non-anonymous Decls in the work queue, so
-    // that they can establish references to anonymous Decls, setting alive=true in the
-    // backend, preventing anonymous Decls from being prematurely destroyed.
     while (true) {
         if (comp.work_queue.readItem()) |work_item| {
-            try processOneJob(comp, work_item, main_progress_node);
-            continue;
-        }
-        if (comp.anon_work_queue.readItem()) |work_item| {
             try processOneJob(comp, work_item, main_progress_node);
             continue;
         }
@@ -3414,14 +3403,7 @@ fn processOneJob(comp: *Compilation, job: Job, prog_node: *std.Progress.Node) !v
 
                     assert(decl.has_tv);
 
-                    if (decl.alive) {
-                        try module.linkerUpdateDecl(decl_index);
-                        return;
-                    }
-
-                    // Instead of sending this decl to the linker, we actually will delete it
-                    // because we found out that it in fact was never referenced.
-                    module.deleteUnusedDecl(decl_index);
+                    try module.linkerUpdateDecl(decl_index);
                     return;
                 },
             }
@@ -3791,7 +3773,7 @@ fn docsCopyFallible(comp: *Compilation) anyerror!void {
             break :p padding_buffer[0..n];
         };
 
-        var header_and_trailer: [2]std.os.iovec_const = .{
+        var header_and_trailer: [2]std.posix.iovec_const = .{
             .{ .iov_base = header_bytes.ptr, .iov_len = header_bytes.len },
             .{ .iov_base = padding.ptr, .iov_len = padding.len },
         };
@@ -4147,7 +4129,7 @@ pub fn cImport(comp: *Compilation, c_src: []const u8, owner_mod: *Package.Module
     const prev_hash_state = man.hash.peekBin();
     const actual_hit = hit: {
         _ = try man.hit();
-        if (man.files.items.len == 0) {
+        if (man.files.entries.len == 0) {
             man.unhit(prev_hash_state, 0);
             break :hit false;
         }
@@ -5205,21 +5187,20 @@ pub fn addCCArgs(
         } else if (target.isMinGW()) {
             try argv.append("-D__MSVCRT_VERSION__=0xE00"); // use ucrt
 
+            switch (ext) {
+                .c, .cpp, .m, .mm, .h, .hpp, .hm, .hmm, .cu, .rc, .assembly, .assembly_with_cpp => {
+                    const minver: u16 = @truncate(@intFromEnum(target.os.getVersionRange().windows.min) >> 16);
+                    try argv.append(
+                        try std.fmt.allocPrint(arena, "-D_WIN32_WINNT=0x{x:0>4}", .{minver}),
+                    );
+                },
+                else => {},
+            }
         }
     }
 
     const llvm_triple = try @import("codegen/llvm.zig").targetTriple(arena, target);
     try argv.appendSlice(&[_][]const u8{ "-target", llvm_triple });
-
-    if (target.os.tag == .windows) switch (ext) {
-        .c, .cpp, .m, .mm, .h, .hpp, .hm, .hmm, .cu, .rc, .assembly, .assembly_with_cpp => {
-            const minver: u16 = @truncate(@intFromEnum(target.os.getVersionRange().windows.min) >> 16);
-            try argv.append(
-                try std.fmt.allocPrint(arena, "-D_WIN32_WINNT=0x{x:0>4}", .{minver}),
-            );
-        },
-        else => {},
-    };
 
     switch (ext) {
         .c, .cpp, .m, .mm, .h, .hpp, .hm, .hmm, .cu, .rc => {
