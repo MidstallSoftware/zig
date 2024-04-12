@@ -5328,8 +5328,6 @@ pub fn realpath(pathname: []const u8, out_buffer: *[max_path_bytes]u8) RealPathE
     if (native_os == .windows) {
         const pathname_w = try windows.sliceToPrefixedFileW(null, pathname);
         return realpathW(pathname_w.span(), out_buffer);
-    } else if (native_os == .wasi and !builtin.link_libc) {
-        @compileError("WASI does not support os.realpath");
     }
     const pathname_c = try toPosixPath(pathname);
     return realpathZ(&pathname_c, out_buffer);

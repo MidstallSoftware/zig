@@ -535,8 +535,8 @@ pub const File = struct {
     /// `arena` has the lifetime of the call to `Compilation.update`.
     pub fn flush(base: *File, arena: Allocator, prog_node: *std.Progress.Node) FlushError!void {
         if (build_options.only_c) {
-            assert(base.tag == .c);
-            return @as(*C, @fieldParentPtr("base", base)).flush(arena, prog_node);
+            assert(base.tag == .wasm);
+            return @as(*Wasm, @fieldParentPtr("base", base)).flush(arena, prog_node);
         }
         const comp = base.comp;
         if (comp.clang_preprocessor_mode == .yes or comp.clang_preprocessor_mode == .pch) {

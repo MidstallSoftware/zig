@@ -867,8 +867,7 @@ pub const Object = struct {
                 if (comp.module) |zcu| m: {
                     const d = try zcu.root_mod.root.joinString(arena, "");
                     if (d.len == 0) break :m;
-                    if (std.fs.path.isAbsolute(d)) break :blk d;
-                    break :blk std.fs.realpathAlloc(arena, d) catch break :blk d;
+                    break :blk d;
                 }
                 break :blk try std.process.getCwdAlloc(arena);
             };

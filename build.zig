@@ -243,7 +243,7 @@ pub fn build(b: *std.Build) !void {
     exe_options.addOption(bool, "llvm_has_xtensa", llvm_has_xtensa);
     exe_options.addOption(bool, "force_gpa", force_gpa);
     exe_options.addOption(bool, "only_c", only_c);
-    exe_options.addOption(bool, "only_core_functionality", only_c);
+    exe_options.addOption(bool, "only_core_functionality", true);
 
     if (link_libc) {
         exe.linkLibC();

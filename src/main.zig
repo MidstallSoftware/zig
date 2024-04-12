@@ -193,7 +193,7 @@ pub fn main() anyerror!void {
     }
 
     // Short circuit some of the other logic for bootstrapping.
-    if (build_options.only_c) {
+    if (true) {
         if (mem.eql(u8, args[1], "build-exe")) {
             return buildOutputType(gpa, arena, args, .{ .build = .Exe });
         } else if (mem.eql(u8, args[1], "build-obj")) {
@@ -1743,7 +1743,7 @@ fn buildOutputType(
             }
         },
         .cc, .cpp => {
-            if (build_options.only_c) unreachable;
+            if (true) unreachable;
 
             emit_h = .no;
             soname = .no;
@@ -3367,7 +3367,7 @@ fn buildOutputType(
     switch (listen) {
         .none => {},
         .stdio => {
-            if (build_options.only_c) unreachable;
+            if (true) unreachable;
             try serve(
                 comp,
                 std.io.getStdIn(),
@@ -3419,7 +3419,7 @@ fn buildOutputType(
         },
         else => |e| return e,
     };
-    if (build_options.only_c) return cleanExit();
+    if (true) return cleanExit();
     try comp.makeBinFileExecutable();
     saveState(comp, debug_incremental);
 
