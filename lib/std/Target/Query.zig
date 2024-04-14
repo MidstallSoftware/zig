@@ -415,6 +415,15 @@ pub fn isNative(self: Query) bool {
     return self.isNativeCpu() and self.isNativeOs() and self.isNativeAbi();
 }
 
+pub fn canDetectLibC(self: Query) bool {
+    if (self.isNative()) return true;
+    if (self.os_tag) |os| {
+        if (builtin.os.tag == .macos and os.isDarwin()) return true;
+        if (os == .linux and self.abi == .android) return true;
+    }
+    return false;
+}
+
 /// Formats a version with the patch component omitted if it is zero,
 /// unlike SemanticVersion.format which formats all its version components regardless.
 fn formatVersion(version: SemanticVersion, writer: anytype) !void {
@@ -468,7 +477,7 @@ pub fn zigTriple(self: Query, allocator: Allocator) Allocator.Error![]u8 {
     }
 
     if (self.glibc_version) |v| {
-        const name = @tagName(self.abi orelse builtin.target.abi);
+        const name = if (self.abi) |abi| @tagName(abi) else "gnu";
         try result.ensureUnusedCapacity(name.len + 2);
         result.appendAssumeCapacity('-');
         result.appendSliceAssumeCapacity(name);
