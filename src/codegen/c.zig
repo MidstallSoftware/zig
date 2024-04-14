@@ -7481,19 +7481,14 @@ fn unFloatOp(f: *Function, inst: Air.Inst.Index, operand: CValue, ty: Type, oper
 }
 
 fn airExpect(f: *Function, inst: Air.Inst.Index) !CValue {
-    const pl_op = f.air.instructions.items(.data)[@intFromEnum(inst)].pl_op;
-    const expect = f.air.extraData(Air.Expect, pl_op.payload).data;
+    const un_op = f.air.instructions.items(.data)[@intFromEnum(inst)].un_op;
 
-    const operand = try f.resolveInst(pl_op.operand);
-
-    const expected = try f.resolveInst(Air.internedToRef(expect.expected));
+    const operand = try f.resolveInst(un_op);
 
     const writer = f.object.writer();
     try writer.writeAll("zig_expect(");
     try f.writeCValue(writer, operand, .FunctionArgument);
-    try writer.writeAll(", ");
-    try f.writeCValue(writer, expected, .FunctionArgument);
-    try writer.print(", {d});", .{expect.probability});
+    try writer.writeAll(");");
 
     return operand;
 }

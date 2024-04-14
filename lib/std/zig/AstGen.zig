@@ -9292,10 +9292,9 @@ fn builtinCall(
             return rvalue(gz, ri, .void_value, node);
         },
         .expect => {
-            const val = try gz.addExtendedPayload(.expect, Zir.Inst.BinNode{
+            const val = try gz.addExtendedPayload(.expect, Zir.Inst.UnNode{
                 .node = gz.nodeIndexToRelative(node),
-                .rhs = try expr(gz, scope, ri, params[0]),
-                .lhs = try expr(gz, scope, ri, params[1]),
+                .operand = try expr(gz, scope, .{ .rl = .{ .coerced_ty = .bool_type } }, params[0]),
             });
             return rvalue(gz, ri, val, node);
         },

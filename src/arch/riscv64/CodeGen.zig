@@ -619,7 +619,7 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
             .mul_add         => try self.airMulAdd(inst),
             .addrspace_cast  => @panic("TODO"),
             
-            .expect => try self.airExpect(inst),
+            .expect => unreachable,
 
             .@"try"          => @panic("TODO"),
             .try_ptr         => @panic("TODO"),
@@ -1448,9 +1448,9 @@ fn airAbs(self: *Self, inst: Air.Inst.Index) !void {
 }
 
 fn airExpect(self: *Self, inst: Air.Inst.Index) InnerError!void {
-    const pl_op = self.air.instructions.items(.data)[@intFromEnum(inst)].pl_op;
+    const bin_op = self.air.instructions.items(.data)[@intFromEnum(inst)].bin_op;
 
-    const operand = try self.resolveInst(pl_op.operand);
+    const operand = try self.resolveInst(bin_op.rhs);
 
     // TODO: optimize!
 

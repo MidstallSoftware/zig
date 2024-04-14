@@ -25680,34 +25680,17 @@ fn zirMemset(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!void
 }
 
 fn zirExpect(sema: *Sema, block: *Block, inst: Zir.Inst.Extended.InstData) CompileError!Air.Inst.Ref {
-    const bin_op = sema.code.extraData(Zir.Inst.BinNode, inst.operand).data;
+    const un_op = sema.code.extraData(Zir.Inst.UnNode, inst.operand).data;
+    const operand = try sema.resolveInst(un_op.operand);
 
-    const expected_src = LazySrcLoc{ .node_offset_builtin_call_arg1 = bin_op.lhs };
-
-    const operand = try sema.resolveInst(bin_op.rhs);
-    const expected = try sema.resolveInst(bin_op.lhs);
-
-    if (!try sema.isComptimeKnown(expected)) return sema.fail(
-        block,
-        expected_src,
-        "@expect expected value must be comptime-known",
-        .{},
-    );
-
-    const coerced_expected = try sema.coerce(
-        block,
-        sema.typeOf(operand),
-        expected,
-        expected_src,
-    );
-
-    return try block.addInst(.{
-        .tag = .expect,
-        .data = .{ .bin_op = .{
-            .rhs = operand,
-            .lhs = coerced_expected,
-        } },
-    });
+    if (sema.mod.backendSupportsFeature(.can_expect) and sema.mod.optimizeMode() != .Debug) {
+        return try block.addInst(.{
+            .tag = .expect,
+            .data = .{ .un_op = operand },
+        });
+    } else {
+        return operand;
+    }
 }
 
 fn zirBuiltinAsyncCall(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData) CompileError!Air.Inst.Ref {

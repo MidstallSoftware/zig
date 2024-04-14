@@ -319,9 +319,9 @@ typedef char bool;
 #endif
 
 #if defined(__GNUC__) || defined(__clang__)
-#define zig_expect(op, exp, prob)   __builtin_expect_with_probability(op, exp, prob)
+#define zig_expect(op) __builtin_expect(op, true)
 #else
-#define zig_expect(op, exp, prob) (op)
+#define zig_expect(op) (op)
 #endif
 
 #define zig_bitSizeOf(T) (CHAR_BIT * sizeof(T))

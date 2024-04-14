@@ -2447,7 +2447,7 @@ const DeclGen = struct {
 
             .assembly => try self.airAssembly(inst),
 
-            .expect => try self.airExpect(inst),
+            .expect => unreachable,
 
             .call              => try self.airCall(inst, .auto),
             .call_always_tail  => try self.airCall(inst, .always_tail),

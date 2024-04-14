@@ -1339,6 +1339,7 @@ pub fn typeOfIndex(air: *const Air, inst: Air.Inst.Index, ip: *const InternPool)
         .trunc_float,
         .neg,
         .neg_optimized,
+        .expect,
         => return air.typeOf(datas[@intFromEnum(inst)].un_op, ip),
 
         .cmp_lt,
@@ -1440,8 +1441,6 @@ pub fn typeOfIndex(air: *const Air, inst: Air.Inst.Index, ip: *const InternPool)
         .c_va_copy,
         .abs,
         => return datas[@intFromEnum(inst)].ty_op.ty.toType(),
-
-        .expect => return air.typeOf(datas[@intFromEnum(inst)].pl_op.operand, ip),
 
         .loop,
         .br,

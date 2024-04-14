@@ -1068,14 +1068,10 @@ fn analyzeInst(
         .cmp_lt_errors_len,
         .set_err_return_trace,
         .c_va_end,
+        .expect,
         => {
             const operand = inst_datas[@intFromEnum(inst)].un_op;
             return analyzeOperands(a, pass, data, inst, .{ operand, .none, .none });
-        },
-
-        .expect => {
-            const pl_op = inst_datas[@intFromEnum(inst)].pl_op;
-            return analyzeOperands(a, pass, data, inst, .{ pl_op.operand, .none, .none });
         },
 
         .ret,

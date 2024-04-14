@@ -10297,17 +10297,11 @@ pub const FuncGen = struct {
         return self.amdgcnWorkIntrinsic(dimension, 0, "amdgcn.workgroup.id");
     }
 
+    // Note that the LowerExpectPass only runs in Release modes
     fn airExpect(self: *FuncGen, inst: Air.Inst.Index) !Builder.Value {
-        const o = self.dg.object;
-        const bin_op = self.air.instructions.items(.data)[@intFromEnum(inst)].bin_op;
+        const un_op = self.air.instructions.items(.data)[@intFromEnum(inst)].un_op;
 
-        const operand = try self.resolveInst(bin_op.rhs);
-
-        // The LowerExpectIntrinsic pass only runs in Release builds.
-        const owner_mod = self.dg.ownerModule();
-        if (owner_mod.optimize_mode == .Debug) return operand;
-
-        const expected = try o.lowerValue(bin_op.lhs);
+        const operand = try self.resolveInst(un_op);
 
         return try self.wip.callIntrinsic(
             .normal,
@@ -10316,7 +10310,7 @@ pub const FuncGen = struct {
             &.{operand.typeOfWip(&self.wip)},
             &.{
                 operand,
-                expected.toValue(),
+                .true,
             },
             "",
         );

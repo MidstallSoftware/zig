@@ -1868,8 +1868,6 @@ fn genInst(func: *CodeGen, inst: Air.Inst.Index) InnerError!void {
         .trunc_float => func.airUnaryFloatOp(inst, .trunc),
         .neg => func.airUnaryFloatOp(inst, .neg),
 
-        .expect => func.airExpect(inst),
-
         .abs => func.airAbs(inst),
 
         .add_with_overflow => func.airAddSubWithOverflow(inst, .add),
@@ -2016,6 +2014,7 @@ fn genInst(func: *CodeGen, inst: Air.Inst.Index) InnerError!void {
         .c_va_copy,
         .c_va_end,
         .c_va_start,
+        .expect,
         => |tag| return func.fail("TODO: Implement wasm inst: {s}", .{@tagName(tag)}),
 
         .atomic_load => func.airAtomicLoad(inst),
@@ -2968,16 +2967,6 @@ fn floatNeg(func: *CodeGen, ty: Type, arg: WValue) InnerError!WValue {
         },
         else => unreachable,
     }
-}
-
-fn airExpect(func: *CodeGen, inst: Air.Inst.Index) InnerError!void {
-    const pl_op = func.air.instructions.items(.data)[@intFromEnum(inst)].pl_op;
-
-    const operand = try func.resolveInst(pl_op.operand);
-
-    // TODO: optimize!
-
-    return func.finishAir(inst, operand, &.{ .none, .none, .none });
 }
 
 fn airWrapBinOp(func: *CodeGen, inst: Air.Inst.Index, op: Op) InnerError!void {

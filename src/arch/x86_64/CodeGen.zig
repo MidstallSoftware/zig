@@ -2012,7 +2012,7 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
             .sqrt        => try self.airSqrt(inst),
             .neg         => try self.airFloatSign(inst),
 
-            .expect => try self.airExpect(inst),
+            .expect => unreachable,
 
             .abs => try self.airAbs(inst),
 
@@ -7470,16 +7470,6 @@ fn airUnaryMath(self: *Self, inst: Air.Inst.Index, tag: Air.Inst.Tag) !void {
         }) catch unreachable,
     } }, &.{ty}, &.{.{ .air_ref = un_op }});
     return self.finishAir(inst, result, .{ un_op, .none, .none });
-}
-
-fn airExpect(self: *Self, inst: Air.Inst.Index) InnerError!void {
-    const pl_op = self.air.instructions.items(.data)[@intFromEnum(inst)].pl_op;
-
-    const operand = try self.resolveInst(pl_op.operand);
-
-    // TODO: optimize!
-
-    return self.finishAir(inst, operand, .{ .none, .none, .none });
 }
 
 fn reuseOperand(

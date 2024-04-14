@@ -238,33 +238,22 @@ pub fn ArrayListAligned(comptime T: type, comptime alignment: ?u29) type {
             @memcpy(dst, items);
         }
 
-        /// Replace range of elements `list[start..][0..len]` with `new_items`.
-        /// Grows list if `len < new_items.len`.
-        /// Shrinks list if `len > new_items.len`.
-        /// Invalidates element pointers if this ArrayList is resized.
+        /// Grows or shrinks the list as necessary.
+        /// Invalidates element pointers if additional capacity is allocated.
         /// Asserts that the range is in bounds.
         pub fn replaceRange(self: *Self, start: usize, len: usize, new_items: []const T) Allocator.Error!void {
-            const after_range = start + len;
-            const range = self.items[start..after_range];
+            var unmanaged = self.moveToUnmanaged();
+            defer self.* = unmanaged.toManaged(self.allocator);
+            return unmanaged.replaceRange(self.allocator, start, len, new_items);
+        }
 
-            if (range.len == new_items.len)
-                @memcpy(range[0..new_items.len], new_items)
-            else if (range.len < new_items.len) {
-                const first = new_items[0..range.len];
-                const rest = new_items[range.len..];
-
-                @memcpy(range[0..first.len], first);
-                try self.insertSlice(after_range, rest);
-            } else {
-                @memcpy(range[0..new_items.len], new_items);
-                const after_subrange = start + new_items.len;
-
-                for (self.items[after_range..], 0..) |item, i| {
-                    self.items[after_subrange..][i] = item;
-                }
-
-                self.items.len -= len - new_items.len;
-            }
+        /// Grows or shrinks the list as necessary.
+        /// Never invalidates element pointers.
+        /// Asserts the capacity is enough for additional items.
+        pub fn replaceRangeAssumeCapacity(self: *Self, start: usize, len: usize, new_items: []const T) void {
+            var unmanaged = self.moveToUnmanaged();
+            defer self.* = unmanaged.toManaged(self.allocator);
+            return unmanaged.replaceRangeAssumeCapacity(start, len, new_items);
         }
 
         /// Extends the list by 1 element. Allocates more memory as necessary.

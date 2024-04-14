@@ -786,7 +786,7 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
             .mul_add         => try self.airMulAdd(inst),
             .addrspace_cast  => return self.fail("TODO implement addrspace_cast", .{}),
             
-            .expect => try self.airExpect(inst),
+            .expect => unreachable,
 
             .@"try"          => try self.airTry(inst),
             .try_ptr         => try self.airTryPtr(inst),
@@ -6088,16 +6088,6 @@ fn airTryPtr(self: *Self, inst: Air.Inst.Index) !void {
     _ = body;
     return self.fail("TODO implement airTryPtr for arm", .{});
     // return self.finishAir(inst, result, .{ extra.data.ptr, .none, .none });
-}
-
-fn airExpect(self: *Self, inst: Air.Inst.Index) InnerError!void {
-    const pl_op = self.air.instructions.items(.data)[@intFromEnum(inst)].pl_op;
-
-    const operand = try self.resolveInst(pl_op.operand);
-
-    // TODO: optimize!
-
-    return self.finishAir(inst, operand, .{ .none, .none, .none });
 }
 
 fn resolveInst(self: *Self, inst: Air.Inst.Ref) InnerError!MCValue {

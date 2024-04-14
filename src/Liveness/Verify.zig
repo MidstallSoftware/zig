@@ -142,6 +142,7 @@ fn verifyBody(self: *Verify, body: []const Air.Inst.Index) Error!void {
             .cmp_lt_errors_len,
             .set_err_return_trace,
             .c_va_end,
+            .expect,
             => {
                 const un_op = data[@intFromEnum(inst)].un_op;
                 try self.verifyInstOperands(inst, .{ un_op, .none, .none });
@@ -315,10 +316,6 @@ fn verifyBody(self: *Verify, body: []const Air.Inst.Index) Error!void {
                 const ty_pl = data[@intFromEnum(inst)].ty_pl;
                 const extra = self.air.extraData(Air.Cmpxchg, ty_pl.payload).data;
                 try self.verifyInstOperands(inst, .{ extra.ptr, extra.expected_value, extra.new_value });
-            },
-            .expect => {
-                const pl_op = data[@intFromEnum(inst)].pl_op;
-                try self.verifyInstOperands(inst, .{ pl_op.operand, .none, .none });
             },
 
             // big tombs
