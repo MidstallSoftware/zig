@@ -17,7 +17,7 @@ const ChildProcess = @This();
 
 pub const Id = switch (native_os) {
     .windows => windows.HANDLE,
-    .wasi => void,
+    .wasi, .uefi => void,
     else => posix.pid_t,
 };
 
@@ -58,10 +58,10 @@ stdout_behavior: StdIo,
 stderr_behavior: StdIo,
 
 /// Set to change the user id when spawning the child process.
-uid: if (native_os == .windows or native_os == .wasi) void else ?posix.uid_t,
+uid: if (native_os == .windows or native_os == .wasi or native_os == .uefi) void else ?posix.uid_t,
 
 /// Set to change the group id when spawning the child process.
-gid: if (native_os == .windows or native_os == .wasi) void else ?posix.gid_t,
+gid: if (native_os == .windows or native_os == .wasi or native_os == .uefi) void else ?posix.gid_t,
 
 /// Set to change the current working directory when spawning the child process.
 cwd: ?[]const u8,
@@ -70,7 +70,7 @@ cwd: ?[]const u8,
 /// Once that is done, `cwd` will be deprecated in favor of this field.
 cwd_dir: ?fs.Dir = null,
 
-err_pipe: ?if (native_os == .windows) void else [2]posix.fd_t,
+err_pipe: ?if (native_os == .windows or native_os == .uefi) void else [2]posix.fd_t,
 
 expand_arg0: Arg0Expand,
 
@@ -211,8 +211,8 @@ pub fn init(argv: []const []const u8, allocator: mem.Allocator) ChildProcess {
         .term = null,
         .env_map = null,
         .cwd = null,
-        .uid = if (native_os == .windows or native_os == .wasi) {} else null,
-        .gid = if (native_os == .windows or native_os == .wasi) {} else null,
+        .uid = if (native_os == .windows or native_os == .wasi or native_os == .uefi) {} else null,
+        .gid = if (native_os == .windows or native_os == .wasi or native_os == .uefi) {} else null,
         .stdin = null,
         .stdout = null,
         .stderr = null,
