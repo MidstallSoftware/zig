@@ -7,6 +7,7 @@
 //! * Switch Branches
 const std = @import("std");
 const log = std.log.scoped(.liveness);
+const prov_log = std.log.scoped(.prov);
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Log2Int = std.math.Log2Int;
@@ -15,6 +16,7 @@ const Liveness = @This();
 const trace = @import("tracy.zig").trace;
 const Air = @import("Air.zig");
 const InternPool = @import("InternPool.zig");
+const Value = @import("Value.zig");
 
 pub const Verify = @import("Liveness/Verify.zig");
 
@@ -39,6 +41,14 @@ tomb_bits: []usize,
 special: std.AutoHashMapUnmanaged(Air.Inst.Index, u32),
 /// Auxiliary data. The way this data is interpreted is determined contextually.
 extra: []const u32,
+
+metadata: std.AutoHashMapUnmanaged(Air.Inst.Index, Metadata),
+
+pub const Metadata = union(enum) {
+    expect: struct {
+        is_likely: bool,
+    },
+};
 
 /// Trailing is the set of instructions whose lifetimes end at the start of the then branch,
 /// followed by the set of instructions whose lifetimes end at the start of the else branch.
@@ -81,6 +91,9 @@ const LivenessPass = enum {
     /// This pass performs the main liveness analysis, setting up tombs and extra data while
     /// considering control flow etc.
     main_analysis,
+
+    /// This pass gathers provenance metadata for instructions that could use it.
+    provenance,
 };
 
 /// Each analysis pass may wish to pass data through calls. A pointer to a `LivenessPassData(pass)`
@@ -128,6 +141,13 @@ fn LivenessPassData(comptime pass: LivenessPass) type {
                 self.old_extra.deinit(gpa);
             }
         },
+
+        .provenance => struct {
+            fn deinit(self: *@This(), gpa: Allocator) void {
+                _ = self;
+                _ = gpa;
+            }
+        },
     };
 }
 
@@ -144,15 +164,23 @@ pub fn analyze(gpa: Allocator, air: Air, intern_pool: *InternPool) Allocator.Err
         ),
         .extra = .{},
         .special = .{},
+        .metadata = .{},
         .intern_pool = intern_pool,
     };
     errdefer gpa.free(a.tomb_bits);
     errdefer a.special.deinit(gpa);
+    errdefer a.metadata.deinit(gpa);
     defer a.extra.deinit(gpa);
 
     @memset(a.tomb_bits, 0);
 
     const main_body = air.getMainBody();
+
+    {
+        var data: LivenessPassData(.provenance) = .{};
+        defer data.deinit(gpa);
+        try analyzeBody(&a, .provenance, &data, main_body);
+    }
 
     {
         var data: LivenessPassData(.loop_analysis) = .{};
@@ -173,6 +201,7 @@ pub fn analyze(gpa: Allocator, air: Air, intern_pool: *InternPool) Allocator.Err
         .tomb_bits = a.tomb_bits,
         .special = a.special,
         .extra = try a.extra.toOwnedSlice(gpa),
+        .metadata = a.metadata,
     };
 }
 
@@ -777,6 +806,7 @@ pub const LoopSlice = struct {
 pub fn deinit(l: *Liveness, gpa: Allocator) void {
     gpa.free(l.tomb_bits);
     gpa.free(l.extra);
+    l.metadata.deinit(gpa);
     l.special.deinit(gpa);
     l.* = undefined;
 }
@@ -841,6 +871,7 @@ const Analysis = struct {
     tomb_bits: []usize,
     special: std.AutoHashMapUnmanaged(Air.Inst.Index, u32),
     extra: std.ArrayListUnmanaged(u32),
+    metadata: std.AutoHashMapUnmanaged(Air.Inst.Index, Metadata),
 
     fn storeTombBits(a: *Analysis, inst: Air.Inst.Index, tomb_bits: Bpi) void {
         const usize_index = (inst * bpi) / @bitSizeOf(usize);
@@ -890,8 +921,12 @@ fn analyzeInst(
     const ip = a.intern_pool;
     const inst_tags = a.air.instructions.items(.tag);
     const inst_datas = a.air.instructions.items(.data);
+    const tag = inst_tags[@intFromEnum(inst)];
 
-    switch (inst_tags[@intFromEnum(inst)]) {
+    if (pass == .provenance)
+        prov_log.debug("[{}] analyzeInst: {s}", .{ pass, @tagName(tag) });
+
+    switch (tag) {
         .add,
         .add_safe,
         .add_optimized,
@@ -1327,6 +1362,31 @@ fn analyzeOperands(
             a.tomb_bits[usize_index] |= @as(usize, tomb_bits) <<
                 @as(Log2Int(usize), @intCast((@intFromEnum(inst) % (@bitSizeOf(usize) / bpi)) * bpi));
         },
+
+        .provenance => {
+            const inst_tags = a.air.instructions.items(.tag);
+            const tag = inst_tags[@intFromEnum(inst)];
+
+            prov_log.debug("[{}], tag: {s}", .{ pass, @tagName(tag) });
+
+            switch (tag) {
+                .expect => {
+                    const rhs = operands[1];
+
+                    const likely_val = Value.fromInterned(rhs.toInterned().?);
+                    const likely = likely_val.toBool();
+
+                    const metadata: Metadata = .{
+                        .expect = .{ .is_likely = likely },
+                    };
+
+                    prov_log.debug("[{}] provenance @expect %{}", .{ pass, @intFromEnum(inst) });
+
+                    try a.metadata.put(a.gpa, inst, metadata);
+                },
+                else => {}, // cannot gather any information from provenance
+            }
+        },
     }
 }
 
@@ -1348,6 +1408,8 @@ fn analyzeFuncEnd(
         .main_analysis => {
             data.live_set.clearRetainingCapacity();
         },
+
+        .provenance => {},
     }
 
     return analyzeOperands(a, pass, data, inst, operands);
@@ -1375,6 +1437,8 @@ fn analyzeInstBr(
             data.live_set.deinit(gpa);
             data.live_set = new_live_set;
         },
+
+        .provenance => {},
     }
 
     return analyzeOperands(a, pass, data, inst, .{ br.operand, .none, .none });
@@ -1444,6 +1508,10 @@ fn analyzeInstBlock(
                     fmtInstList(@ptrCast(a.extra.items[extra_index + 1 ..][0..num_deaths])),
                 });
             }
+        },
+
+        .provenance => {
+            try analyzeBody(a, pass, data, body);
         },
     }
 }
@@ -1545,6 +1613,8 @@ fn analyzeInstLoop(
 
             try analyzeBody(a, pass, data, body);
         },
+
+        .provenance => {},
     }
 }
 
@@ -1660,6 +1730,8 @@ fn analyzeInstCondBr(
             a.extra.appendSliceAssumeCapacity(@ptrCast(else_mirrored_deaths.items));
             try a.special.put(gpa, inst, extra_index);
         },
+
+        .provenance => {},
     }
 
     try analyzeOperands(a, pass, data, inst, .{ condition, .none, .none });
@@ -1774,6 +1846,7 @@ fn analyzeInstSwitchBr(
             a.extra.appendSliceAssumeCapacity(@ptrCast(mirrored_deaths[ncases].items));
             try a.special.put(gpa, inst, extra_index);
         },
+        .provenance => {},
     }
 
     try analyzeOperands(a, pass, data, inst, .{ condition, .none, .none });
@@ -1806,6 +1879,7 @@ fn AnalyzeBigOperands(comptime pass: LivenessPass) type {
             const extra_tombs: []u32 = switch (pass) {
                 .loop_analysis => &.{},
                 .main_analysis => try a.gpa.alloc(u32, max_extra_tombs),
+                .provenance => &.{},
             };
             errdefer a.gpa.free(extra_tombs);
 
@@ -1813,6 +1887,7 @@ fn AnalyzeBigOperands(comptime pass: LivenessPass) type {
 
             const will_die_immediately: bool = switch (pass) {
                 .loop_analysis => false, // track everything, since we don't have full liveness information yet
+                .provenance => false,
                 .main_analysis => !data.live_set.contains(inst),
             };
 
@@ -1860,6 +1935,8 @@ fn AnalyzeBigOperands(comptime pass: LivenessPass) type {
                         big.extra_tombs[extra_byte] |= @as(u32, 1) << extra_bit;
                     }
                 },
+
+                .provenance => {},
             }
         }
 
@@ -1894,6 +1971,8 @@ fn AnalyzeBigOperands(comptime pass: LivenessPass) type {
                     try big.a.extra.appendSlice(gpa, extra_tombs);
                     try big.a.special.put(gpa, big.inst, extra_index);
                 },
+
+                .provenance => {},
             }
 
             try analyzeOperands(big.a, pass, big.data, big.inst, big.small);

@@ -34,6 +34,7 @@ pub const Mnemonic = enum {
 
     // B Type
     beq,
+    bne,
 
     // R Type
     add,
@@ -87,6 +88,7 @@ pub const Mnemonic = enum {
             .jal    => .{ .opcode = 0b1101111, .funct3 = null,  .funct7 = null      },
 
             .beq    => .{ .opcode = 0b1100011, .funct3 = 0b000, .funct7 = null      },
+            .bne    => .{ .opcode = 0b1100011, .funct3 = 0b001, .funct7 = null      },
 
             .slt    => .{ .opcode = 0b0110011, .funct3 = 0b010, .funct7 = 0b0000000 },
 
@@ -145,6 +147,7 @@ pub const InstEnc = enum {
             => .J,
 
             .beq,
+            .bne,
             => .B,
 
             .slt,

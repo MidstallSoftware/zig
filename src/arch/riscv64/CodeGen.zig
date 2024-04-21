@@ -1142,7 +1142,6 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
             .frame_addr      => try self.airFrameAddress(inst),
             .fence           => try self.airFence(),
             .cond_br         => try self.airCondBr(inst),
-            .dbg_stmt        => try self.airDbgStmt(inst),
             .fptrunc         => try self.airFptrunc(inst),
             .fpext           => try self.airFpext(inst),
             .intcast         => try self.airIntCast(inst),
@@ -1200,15 +1199,13 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
             .@"try"          =>  try self.airTry(inst),
             .try_ptr         =>  return self.fail("TODO: try_ptr", .{}),
 
-            .expect => unreachable,
+            .expect => try self.airExpect(inst),
 
             .dbg_stmt         => try self.airDbgStmt(inst),
             .dbg_inline_block => try self.airDbgInlineBlock(inst),
             .dbg_var_ptr,
             .dbg_var_val,
             => try self.airDbgVar(inst),
-
-            .dbg_inline_block => try self.airDbgInlineBlock(inst),
 
             .call              => try self.airCall(inst, .auto),
             .call_always_tail  => try self.airCall(inst, .always_tail),
@@ -2680,6 +2677,17 @@ fn airWrapErrUnionErr(self: *Self, inst: Air.Inst.Index) !void {
     return self.finishAir(inst, result, .{ ty_op.operand, .none, .none });
 }
 
+fn airExpect(self: *Self, inst: Air.Inst.Index) !void {
+    const bin_op = self.air.instructions.items(.data)[@intFromEnum(inst)].bin_op;
+    const lhs = bin_op.lhs;
+
+    // verify the lhs is tracked in liveness.metadata
+    const get = self.liveness.metadata.get(inst);
+    if (get == null) return self.fail("failed to track @expect compare", .{});
+
+    return self.finishAir(inst, try self.resolveInst(lhs), .{ lhs, bin_op.rhs, .none });
+}
+
 fn airTry(self: *Self, inst: Air.Inst.Index) !void {
     const pl_op = self.air.instructions.items(.data)[@intFromEnum(inst)].pl_op;
     const extra = self.air.extraData(Air.Try, pl_op.payload);
@@ -3847,10 +3855,39 @@ fn airCondBr(self: *Self, inst: Air.Inst.Index) !void {
 
     self.scope_generation += 1;
     const state = try self.saveState();
-    const reloc = try self.condBr(cond_ty, cond);
 
-    for (liveness_cond_br.then_deaths) |death| try self.processDeath(death);
-    try self.genBody(then_body);
+    // do we have any metadata that could help optimize this?
+    const maybe_metadata = self.liveness.metadata.get(pl_op.operand.toIndex().?);
+    const is_likely: bool = blk: {
+        if (maybe_metadata) |meta| if (meta == .expect) {
+            break :blk meta.expect.is_likely;
+        };
+        break :blk true;
+    };
+
+    const then_deaths = liveness_cond_br.then_deaths;
+    const else_deaths = liveness_cond_br.else_deaths;
+
+    const order = if (is_likely)
+        .{ .{ then_deaths, then_body }, .{ else_deaths, else_body } }
+    else
+        .{ .{ else_deaths, else_body }, .{ then_deaths, then_body } };
+
+    const cond_reg = try self.copyToTmpRegister(cond_ty, cond);
+    const reloc = try self.addInst(.{
+        .tag = if (is_likely) .bne else .beq,
+        .ops = .rr_inst,
+        .data = .{
+            .b_type = .{
+                .rs1 = cond_reg,
+                .rs2 = .zero,
+                .inst = undefined,
+            },
+        },
+    });
+
+    for (order[0][0]) |death| try self.processDeath(death);
+    try self.genBody(order[0][1]);
     try self.restoreState(state, &.{}, .{
         .emit_instructions = false,
         .update_tracking = true,
@@ -3860,8 +3897,8 @@ fn airCondBr(self: *Self, inst: Air.Inst.Index) !void {
 
     self.performReloc(reloc);
 
-    for (liveness_cond_br.else_deaths) |death| try self.processDeath(death);
-    try self.genBody(else_body);
+    for (order[1][0]) |death| try self.processDeath(death);
+    try self.genBody(order[1][1]);
     try self.restoreState(state, &.{}, .{
         .emit_instructions = false,
         .update_tracking = true,
