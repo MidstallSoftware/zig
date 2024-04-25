@@ -1804,8 +1804,10 @@ pub const LoadedUnionType = struct {
     decl: DeclIndex,
     /// Represents the declarations inside this union.
     namespace: OptionalNamespaceIndex,
-    /// The enum tag type.
-    enum_tag_ty: Index,
+    /// The tag type.
+    tag_ty: Index,
+    /// The layout of the union.
+    layout: std.builtin.Type.ContainerLayout,
     /// List of field types in declaration order.
     /// These are `none` until `status` is `have_field_types` or `have_layout`.
     field_types: Index.Slice,
@@ -1871,7 +1873,7 @@ pub const LoadedUnionType = struct {
     };
 
     pub fn loadTagType(self: LoadedUnionType, ip: *InternPool) LoadedEnumType {
-        return ip.loadEnumType(self.enum_tag_ty);
+        return ip.loadEnumType(self.tag_ty);
     }
 
     /// Pointer to an enum type which is used for the tag of the union.
@@ -1986,7 +1988,8 @@ pub fn loadUnionType(ip: *const InternPool, index: Index) LoadedUnionType {
         .extra_index = data,
         .decl = type_union.data.decl,
         .namespace = type_union.data.namespace,
-        .enum_tag_ty = type_union.data.tag_ty,
+        .layout = type_union.data.flags.layout,
+        .tag_ty = type_union.data.tag_ty,
         .field_types = field_types,
         .field_aligns = field_aligns,
         .zir_index = type_union.data.zir_index,
@@ -6011,7 +6014,7 @@ pub const UnionTypeInit = struct {
     },
     has_namespace: bool,
     fields_len: u32,
-    enum_tag_ty: Index,
+    tag_ty: Index,
     /// May have length 0 which leaves the values unset until later.
     field_types: []const Index,
     /// May have length 0 which leaves the values unset until later.
@@ -6077,7 +6080,7 @@ pub fn getUnionType(ip: *InternPool, gpa: Allocator, ini: UnionTypeInit) Allocat
         .padding = std.math.maxInt(u32),
         .decl = undefined, // set by `finish`
         .namespace = .none, // set by `finish`
-        .tag_ty = ini.enum_tag_ty,
+        .tag_ty = ini.tag_ty,
         .zir_index = switch (ini.key) {
             inline else => |x| x.zir_index,
         },

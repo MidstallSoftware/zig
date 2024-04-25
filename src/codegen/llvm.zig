@@ -2617,7 +2617,7 @@ pub const Object = struct {
                         ty.abiSize(mod) * 8,
                         (ty.abiAlignment(mod).toByteUnits() orelse 0) * 8,
                         try o.builder.debugTuple(
-                            &.{try o.lowerDebugType(Type.fromInterned(union_type.enum_tag_ty))},
+                            &.{try o.lowerDebugType(Type.fromInterned(union_type.tag_ty))},
                         ),
                     );
 
@@ -2703,7 +2703,7 @@ pub const Object = struct {
                     .none, // File
                     debug_fwd_ref,
                     0, // Line
-                    try o.lowerDebugType(Type.fromInterned(union_type.enum_tag_ty)),
+                    try o.lowerDebugType(Type.fromInterned(union_type.tag_ty)),
                     layout.tag_size * 8,
                     (layout.tag_align.toByteUnits() orelse 0) * 8,
                     tag_offset * 8,
@@ -3482,7 +3482,7 @@ pub const Object = struct {
                     }
 
                     if (layout.payload_size == 0) {
-                        const enum_tag_ty = try o.lowerType(Type.fromInterned(union_obj.enum_tag_ty));
+                        const enum_tag_ty = try o.lowerType(Type.fromInterned(union_obj.tag_ty));
                         try o.type_map.put(o.gpa, t.toIntern(), enum_tag_ty);
                         return enum_tag_ty;
                     }
@@ -3516,7 +3516,7 @@ pub const Object = struct {
                         );
                         return ty;
                     }
-                    const enum_tag_ty = try o.lowerType(Type.fromInterned(union_obj.enum_tag_ty));
+                    const enum_tag_ty = try o.lowerType(Type.fromInterned(union_obj.tag_ty));
 
                     // Put the tag before or after the payload depending on which one's
                     // alignment is greater.
@@ -10038,7 +10038,7 @@ pub const FuncGen = struct {
                 });
             };
             if (layout.tag_size == 0) break :t try o.builder.structType(.normal, &.{payload_ty});
-            const tag_ty = try o.lowerType(Type.fromInterned(union_obj.enum_tag_ty));
+            const tag_ty = try o.lowerType(Type.fromInterned(union_obj.tag_ty));
             var fields: [3]Builder.Type = undefined;
             var fields_len: usize = 2;
             if (layout.tag_align.compare(.gte, layout.payload_align)) {
@@ -10079,9 +10079,9 @@ pub const FuncGen = struct {
             const tag_index = @intFromBool(layout.tag_align.compare(.lt, layout.payload_align));
             const indices: [2]Builder.Value = .{ usize_zero, try o.builder.intValue(.i32, tag_index) };
             const field_ptr = try self.wip.gep(.inbounds, llvm_union_ty, result_ptr, &indices, "");
-            const tag_ty = try o.lowerType(Type.fromInterned(union_obj.enum_tag_ty));
+            const tag_ty = try o.lowerType(Type.fromInterned(union_obj.tag_ty));
             const llvm_tag = try o.builder.intValue(tag_ty, tag_int);
-            const tag_alignment = Type.fromInterned(union_obj.enum_tag_ty).abiAlignment(mod).toLlvm();
+            const tag_alignment = Type.fromInterned(union_obj.tag_ty).abiAlignment(mod).toLlvm();
             _ = try self.wip.store(.normal, llvm_tag, field_ptr, tag_alignment);
         }
 

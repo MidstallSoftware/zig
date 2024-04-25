@@ -1648,7 +1648,7 @@ pub const DeclGen = struct {
                                     .payload) {
                                     .tag => try dg.renderUndefValue(
                                         writer,
-                                        Type.fromInterned(loaded_union.enum_tag_ty),
+                                        Type.fromInterned(loaded_union.tag_ty),
                                         initializer_type,
                                     ),
                                     .payload => {

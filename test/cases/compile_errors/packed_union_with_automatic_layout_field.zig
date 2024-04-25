@@ -2,12 +2,12 @@ const Foo = struct {
     a: u32,
     b: f32,
 };
-const Payload = packed union {
+const Payload = packed union(u64) {
     A: Foo,
-    B: bool,
+    B: u64,
 };
 export fn entry() void {
-    const a: Payload = .{ .B = true };
+    const a: Payload = .{ .B = 10 };
     _ = a;
 }
 

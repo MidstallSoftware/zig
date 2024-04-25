@@ -135,7 +135,7 @@ test "coerce non byte-sized integers accross 32bits boundary" {
     }
 }
 
-const Piece = packed struct {
+const Piece = packed struct(u4) {
     color: Color,
     type: Type,
 
@@ -219,9 +219,9 @@ test "load non byte-sized value in union" {
     // note: this bug is triggered by the == operator, expectEqual will hide it
     // using ptrCast not to depend on unitialised memory state
 
-    var union0: packed union {
+    var union0: packed union(u4) {
         p: Piece,
-        int: u8,
+        int: u4,
     } = .{ .int = 0 };
     union0.int = 0b11111011;
     try expect(union0.p.type == .PAWN);

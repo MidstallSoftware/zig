@@ -3978,7 +3978,22 @@ test "@tagName" {
       {#header_open|packed union#}
       <p>A {#syntax#}packed union{#endsyntax#} has well-defined in-memory layout and is eligible
           to be in a {#link|packed struct#}.</p>
+      <p>Packed unions are required to have a backing integer, and all 
+        fields must have the same {#syntax#}@bitSizeOf{#endsyntax#}.</p>
       {#header_close#}
+      {#code_begin|test|test_packed_union#}
+const std = @import("std");
+const expect = std.testing.expect;
+
+const U = packed union(u16) {
+    x: f16,
+    y: u16,
+};
+
+test "packed union" {
+  try expect(@bitSizeOf(U) == 16);
+}
+      {#code_end#}
 
       {#header_open|Anonymous Union Literals#}
       <p>{#link|Anonymous Struct Literals#} syntax can be used to initialize unions without specifying

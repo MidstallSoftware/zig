@@ -6043,6 +6043,12 @@ pub fn typeToUnion(mod: *Module, ty: Type) ?InternPool.LoadedUnionType {
     };
 }
 
+pub fn typeToPackedUnion(mod: *Module, ty: Type) ?InternPool.LoadedUnionType {
+    const u = mod.typeToUnion(ty) orelse return null;
+    if (u.layout != .@"packed") return null;
+    return u;
+}
+
 pub fn typeToFunc(mod: *Module, ty: Type) ?InternPool.Key.FuncType {
     if (ty.ip_index == .none) return null;
     return mod.intern_pool.indexToFuncType(ty.toIntern());
@@ -6138,6 +6144,7 @@ pub const UnionLayout = struct {
     tag_align: Alignment,
     tag_size: u64,
     padding: u32,
+    layout: std.builtin.Type.ContainerLayout,
 };
 
 pub fn getUnionLayout(mod: *Module, loaded_union: InternPool.LoadedUnionType) UnionLayout {
@@ -6168,7 +6175,7 @@ pub fn getUnionLayout(mod: *Module, loaded_union: InternPool.LoadedUnionType) Un
         }
     }
     const have_tag = loaded_union.flagsPtr(ip).runtime_tag.hasTag();
-    if (!have_tag or !Type.fromInterned(loaded_union.enum_tag_ty).hasRuntimeBits(mod)) {
+    if (!have_tag or !Type.fromInterned(loaded_union.tag_ty).hasRuntimeBits(mod)) {
         return .{
             .abi_size = payload_align.forward(payload_size),
             .abi_align = payload_align,
@@ -6180,11 +6187,12 @@ pub fn getUnionLayout(mod: *Module, loaded_union: InternPool.LoadedUnionType) Un
             .tag_align = .none,
             .tag_size = 0,
             .padding = 0,
+            .layout = loaded_union.layout,
         };
     }
 
-    const tag_size = Type.fromInterned(loaded_union.enum_tag_ty).abiSize(mod);
-    const tag_align = Type.fromInterned(loaded_union.enum_tag_ty).abiAlignment(mod).max(.@"1");
+    const tag_size = Type.fromInterned(loaded_union.tag_ty).abiSize(mod);
+    const tag_align = Type.fromInterned(loaded_union.tag_ty).abiAlignment(mod).max(.@"1");
     return .{
         .abi_size = loaded_union.size(ip).*,
         .abi_align = tag_align.max(payload_align),
@@ -6196,6 +6204,7 @@ pub fn getUnionLayout(mod: *Module, loaded_union: InternPool.LoadedUnionType) Un
         .tag_align = tag_align,
         .tag_size = tag_size,
         .padding = loaded_union.padding(ip).*,
+        .layout = loaded_union.layout,
     };
 }
 
@@ -6208,7 +6217,7 @@ pub fn unionAbiAlignment(mod: *Module, loaded_union: InternPool.LoadedUnionType)
     const ip = &mod.intern_pool;
     const have_tag = loaded_union.flagsPtr(ip).runtime_tag.hasTag();
     var max_align: Alignment = .none;
-    if (have_tag) max_align = Type.fromInterned(loaded_union.enum_tag_ty).abiAlignment(mod);
+    if (have_tag) max_align = Type.fromInterned(loaded_union.tag_ty).abiAlignment(mod);
     for (loaded_union.field_types.get(ip), 0..) |field_ty, field_index| {
         if (!Type.fromInterned(field_ty).hasRuntimeBits(mod)) continue;
 
@@ -6233,7 +6242,7 @@ pub fn unionFieldNormalAlignment(mod: *Module, loaded_union: InternPool.LoadedUn
 pub fn unionTagFieldIndex(mod: *Module, loaded_union: InternPool.LoadedUnionType, enum_tag: Value) ?u32 {
     const ip = &mod.intern_pool;
     if (enum_tag.toIntern() == .none) return null;
-    assert(ip.typeOf(enum_tag.toIntern()) == loaded_union.enum_tag_ty);
+    assert(ip.typeOf(enum_tag.toIntern()) == loaded_union.tag_ty);
     return loaded_union.loadTagType(ip).tagValueIndex(ip, enum_tag.toIntern());
 }
 

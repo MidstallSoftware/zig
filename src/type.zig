@@ -738,9 +738,10 @@ pub const Type = struct {
             },
             .union_type => {
                 const union_type = ip.loadUnionType(ty.toIntern());
-                return switch (union_type.flagsPtr(ip).runtime_tag) {
-                    .none, .safety => union_type.flagsPtr(ip).layout != .auto,
-                    .tagged => false,
+                const flags = union_type.flagsPtr(ip);
+                return switch (flags.runtime_tag) {
+                    .none, .safety => flags.layout != .auto,
+                    .tagged => flags.layout == .@"packed",
                 };
             },
             .enum_type => switch (ip.loadEnumType(ty.toIntern()).tag_mode) {
@@ -1930,7 +1931,7 @@ pub const Type = struct {
         switch (union_type.flagsPtr(ip).runtime_tag) {
             .tagged => {
                 assert(union_type.flagsPtr(ip).status.haveFieldTypes());
-                return Type.fromInterned(union_type.enum_tag_ty);
+                return Type.fromInterned(union_type.tag_ty);
             },
             else => return null,
         }
@@ -1945,7 +1946,7 @@ pub const Type = struct {
                 const union_type = ip.loadUnionType(ty.toIntern());
                 if (!union_type.hasTag(ip)) return null;
                 assert(union_type.haveFieldTypes(ip));
-                return Type.fromInterned(union_type.enum_tag_ty);
+                return Type.fromInterned(union_type.tag_ty);
             },
             else => null,
         };
@@ -1955,7 +1956,7 @@ pub const Type = struct {
     /// not be stored at runtime.
     pub fn unionTagTypeHypothetical(ty: Type, mod: *Module) Type {
         const union_obj = mod.typeToUnion(ty).?;
-        return Type.fromInterned(union_obj.enum_tag_ty);
+        return Type.fromInterned(union_obj.tag_ty);
     }
 
     pub fn unionFieldType(ty: Type, enum_tag: Value, mod: *Module) ?Type {
@@ -2517,7 +2518,7 @@ pub const Type = struct {
 
                 .union_type => {
                     const union_obj = ip.loadUnionType(ty.toIntern());
-                    const tag_val = (try Type.fromInterned(union_obj.enum_tag_ty).onePossibleValue(mod)) orelse
+                    const tag_val = (try Type.fromInterned(union_obj.tag_ty).onePossibleValue(mod)) orelse
                         return null;
                     if (union_obj.field_types.len == 0) {
                         const only = try mod.intern(.{ .empty_enum_value = ty.toIntern() });
@@ -2957,7 +2958,7 @@ pub const Type = struct {
     pub fn intTagType(ty: Type, mod: *Module) Type {
         const ip = &mod.intern_pool;
         return switch (ip.indexToKey(ty.toIntern())) {
-            .union_type => Type.fromInterned(ip.loadUnionType(ty.toIntern()).enum_tag_ty).intTagType(mod),
+            .union_type => Type.fromInterned(ip.loadUnionType(ty.toIntern()).tag_ty).intTagType(mod),
             .enum_type => Type.fromInterned(ip.loadEnumType(ty.toIntern()).tag_ty),
             else => unreachable,
         };

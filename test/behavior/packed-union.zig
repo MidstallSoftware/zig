@@ -19,7 +19,7 @@ fn testFlagsInPackedUnion() !void {
         enable_2: bool = false,
         enable_3: bool = false,
         enable_4: bool = false,
-        other_flags: packed union {
+        other_flags: packed union(u4) {
             flags: packed struct(u4) {
                 enable_1: bool = true,
                 enable_2: bool = false,
@@ -56,8 +56,8 @@ test "flags in packed union at offset" {
 }
 
 fn testFlagsInPackedUnionAtOffset() !void {
-    const FlagBits = packed union {
-        base_flags: packed union {
+    const FlagBits = packed union(u12) {
+        base_flags: packed union(u12) {
             flags: packed struct(u4) {
                 enable_1: bool = true,
                 enable_2: bool = false,
@@ -65,10 +65,11 @@ fn testFlagsInPackedUnionAtOffset() !void {
                 enable_4: bool = false,
             },
             bits: u4,
+            _: u4,
         },
         adv_flags: packed struct(u12) {
             pad: u8 = 0,
-            adv: packed union {
+            adv: packed union(u4) {
                 flags: packed struct(u4) {
                     enable_1: bool = true,
                     enable_2: bool = false,
@@ -111,7 +112,7 @@ fn testPackedUnionInPackedStruct() !void {
         read,
         insert,
     };
-    const RequestUnion = packed union {
+    const RequestUnion = packed union(u32) {
         read: ReadRequest,
     };
 
@@ -142,7 +143,7 @@ test "packed union initialized with a runtime value" {
         timestamp: u50,
         random_bits: u13,
     };
-    const ID = packed union {
+    const ID = packed union(u63) {
         value: u63,
         fields: Fields,
 
@@ -161,7 +162,7 @@ test "packed union initialized with a runtime value" {
 
 test "assigning to non-active field at comptime" {
     comptime {
-        const FlagBits = packed union {
+        const FlagBits = packed union(u0) {
             flags: packed struct {},
             bits: packed struct {},
         };
@@ -172,7 +173,7 @@ test "assigning to non-active field at comptime" {
 }
 
 test "comptime packed union of pointers" {
-    const U = packed union {
+    const U = packed union(usize) {
         a: *const u32,
         b: *const [1]u32,
     };

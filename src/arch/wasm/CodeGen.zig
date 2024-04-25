@@ -5413,7 +5413,7 @@ fn airUnionInit(func: *CodeGen, inst: Air.Inst.Index) InnerError!void {
                 }
 
                 if (layout.tag_size > 0) {
-                    try func.store(result_ptr, tag_int, Type.fromInterned(union_obj.enum_tag_ty), 0);
+                    try func.store(result_ptr, tag_int, Type.fromInterned(union_obj.tag_ty), 0);
                 }
             } else {
                 try func.store(result_ptr, payload, field_ty, 0);
@@ -5421,7 +5421,7 @@ fn airUnionInit(func: *CodeGen, inst: Air.Inst.Index) InnerError!void {
                     try func.store(
                         result_ptr,
                         tag_int,
-                        Type.fromInterned(union_obj.enum_tag_ty),
+                        Type.fromInterned(union_obj.tag_ty),
                         @intCast(layout.payload_size),
                     );
                 }

@@ -261,10 +261,10 @@ test containerLayout {
     const U1 = union {
         a: u8,
     };
-    const U2 = packed union {
+    const U2 = packed union(u8) {
         a: u8,
     };
-    const U3 = extern union {
+    const U3 = extern union(u8) {
         a: u8,
     };
 
@@ -1248,13 +1248,6 @@ test hasUniqueRepresentation {
     const TestStruct5 = struct { a: TestStruct4 };
 
     try testing.expect(!hasUniqueRepresentation(TestStruct5));
-
-    const TestUnion1 = packed union {
-        a: u32,
-        b: u16,
-    };
-
-    try testing.expect(!hasUniqueRepresentation(TestUnion1));
 
     const TestUnion2 = extern union {
         a: u32,

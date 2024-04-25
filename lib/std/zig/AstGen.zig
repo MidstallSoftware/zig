@@ -5214,12 +5214,12 @@ fn unionDeclInner(
     const decl_count = try astgen.scanDecls(&namespace, members);
     const field_count: u32 = @intCast(members.len - decl_count);
 
-    if (layout != .auto and (auto_enum_tok != null or arg_node != 0)) {
-        if (arg_node != 0) {
-            return astgen.failNode(arg_node, "{s} union does not support enum tag type", .{@tagName(layout)});
-        } else {
-            return astgen.failTok(auto_enum_tok.?, "{s} union does not support enum tag type", .{@tagName(layout)});
-        }
+    if (layout != .auto and auto_enum_tok != null) {
+        return astgen.failTok(auto_enum_tok.?, "{s} union does not support enum tag type", .{@tagName(layout)});
+    }
+
+    if (layout == .@"packed" and arg_node == 0) {
+        return astgen.failNode(node, "packed union must have a backing integer", .{});
     }
 
     const arg_inst: Zir.Inst.Ref = if (arg_node != 0)
@@ -5392,6 +5392,283 @@ fn unionDeclInner(
     return decl_inst.toRef();
 }
 
+fn enumDeclInner(
+    gz: *GenZir,
+    scope: *Scope,
+    node: Ast.Node.Index,
+    layout_token: ?u32,
+    members: []const Ast.Node.Index,
+    arg_node: Ast.Node.Index,
+) InnerError!Zir.Inst.Ref {
+    const astgen = gz.astgen;
+    const tree = astgen.tree;
+    const gpa = astgen.gpa;
+
+    if (layout_token) |t| {
+        return astgen.failTok(t, "enums do not support 'packed' or 'extern'; instead provide an explicit integer tag type", .{});
+    }
+    // Count total fields as well as how many have explicitly provided tag values.
+    const counts = blk: {
+        var values: usize = 0;
+        var total_fields: usize = 0;
+        var decls: usize = 0;
+        var nonexhaustive_node: Ast.Node.Index = 0;
+        var nonfinal_nonexhaustive = false;
+        for (members) |member_node| {
+            var member = tree.fullContainerField(member_node) orelse {
+                decls += 1;
+                continue;
+            };
+            member.convertToNonTupleLike(astgen.tree.nodes);
+            if (member.ast.tuple_like) {
+                return astgen.failTok(member.ast.main_token, "enum field missing name", .{});
+            }
+            if (member.comptime_token) |comptime_token| {
+                return astgen.failTok(comptime_token, "enum fields cannot be marked comptime", .{});
+            }
+            if (member.ast.type_expr != 0) {
+                return astgen.failNodeNotes(
+                    member.ast.type_expr,
+                    "enum fields do not have types",
+                    .{},
+                    &[_]u32{
+                        try astgen.errNoteNode(
+                            node,
+                            "consider 'union(enum)' here to make it a tagged union",
+                            .{},
+                        ),
+                    },
+                );
+            }
+            if (member.ast.align_expr != 0) {
+                return astgen.failNode(member.ast.align_expr, "enum fields cannot be aligned", .{});
+            }
+
+            const name_token = member.ast.main_token;
+            if (mem.eql(u8, tree.tokenSlice(name_token), "_")) {
+                if (nonexhaustive_node != 0) {
+                    return astgen.failNodeNotes(
+                        member_node,
+                        "redundant non-exhaustive enum mark",
+                        .{},
+                        &[_]u32{
+                            try astgen.errNoteNode(
+                                nonexhaustive_node,
+                                "other mark here",
+                                .{},
+                            ),
+                        },
+                    );
+                }
+                nonexhaustive_node = member_node;
+                if (member.ast.value_expr != 0) {
+                    return astgen.failNode(member.ast.value_expr, "'_' is used to mark an enum as non-exhaustive and cannot be assigned a value", .{});
+                }
+                continue;
+            } else if (nonexhaustive_node != 0) {
+                nonfinal_nonexhaustive = true;
+            }
+            total_fields += 1;
+            if (member.ast.value_expr != 0) {
+                if (arg_node == 0) {
+                    return astgen.failNode(member.ast.value_expr, "value assigned to enum tag with inferred tag type", .{});
+                }
+                values += 1;
+            }
+        }
+        if (nonfinal_nonexhaustive) {
+            return astgen.failNode(nonexhaustive_node, "'_' field of non-exhaustive enum must be last", .{});
+        }
+        break :blk .{
+            .total_fields = total_fields,
+            .values = values,
+            .decls = decls,
+            .nonexhaustive_node = nonexhaustive_node,
+        };
+    };
+    if (counts.nonexhaustive_node != 0 and arg_node == 0) {
+        try astgen.appendErrorNodeNotes(
+            node,
+            "non-exhaustive enum missing integer tag type",
+            .{},
+            &[_]u32{
+                try astgen.errNoteNode(
+                    counts.nonexhaustive_node,
+                    "marked non-exhaustive here",
+                    .{},
+                ),
+            },
+        );
+    }
+    // In this case we must generate ZIR code for the tag values, similar to
+    // how structs are handled above.
+    const nonexhaustive = counts.nonexhaustive_node != 0;
+
+    const decl_inst = try gz.reserveInstructionIndex();
+
+    var namespace: Scope.Namespace = .{
+        .parent = scope,
+        .node = node,
+        .inst = decl_inst,
+        .declaring_gz = gz,
+        .maybe_generic = astgen.within_fn,
+    };
+    defer namespace.deinit(gpa);
+
+    // The enum_decl instruction introduces a scope in which the decls of the enum
+    // are in scope, so that tag values can refer to decls within the enum itself.
+    astgen.advanceSourceCursorToNode(node);
+    var block_scope: GenZir = .{
+        .parent = &namespace.base,
+        .decl_node_index = node,
+        .decl_line = gz.decl_line,
+        .astgen = astgen,
+        .is_comptime = true,
+        .instructions = gz.instructions,
+        .instructions_top = gz.instructions.items.len,
+    };
+    defer block_scope.unstack();
+
+    _ = try astgen.scanDecls(&namespace, members);
+    namespace.base.tag = .namespace;
+
+    const arg_inst: Zir.Inst.Ref = if (arg_node != 0)
+        try comptimeExpr(&block_scope, &namespace.base, coerced_type_ri, arg_node)
+    else
+        .none;
+
+    const bits_per_field = 1;
+    const max_field_size = 3;
+    var wip_members = try WipMembers.init(gpa, &astgen.scratch, @intCast(counts.decls), @intCast(counts.total_fields), bits_per_field, max_field_size);
+    defer wip_members.deinit();
+
+    var fields_hasher = std.zig.SrcHasher.init(.{});
+    if (arg_node != 0) {
+        fields_hasher.update(tree.getNodeSource(arg_node));
+    }
+    fields_hasher.update(&.{@intFromBool(nonexhaustive)});
+
+    var sfba = std.heap.stackFallback(256, astgen.arena);
+    const sfba_allocator = sfba.get();
+
+    var duplicate_names = std.AutoArrayHashMap(Zir.NullTerminatedString, std.ArrayListUnmanaged(Ast.TokenIndex)).init(sfba_allocator);
+    try duplicate_names.ensureTotalCapacity(counts.total_fields);
+
+    // When there aren't errors, use this to avoid a second iteration.
+    var any_duplicate = false;
+
+    for (members) |member_node| {
+        if (member_node == counts.nonexhaustive_node)
+            continue;
+        fields_hasher.update(tree.getNodeSource(member_node));
+        var member = switch (try containerMember(&block_scope, &namespace.base, &wip_members, member_node)) {
+            .decl => continue,
+            .field => |field| field,
+        };
+        member.convertToNonTupleLike(astgen.tree.nodes);
+        assert(member.comptime_token == null);
+        assert(member.ast.type_expr == 0);
+        assert(member.ast.align_expr == 0);
+
+        const field_name = try astgen.identAsString(member.ast.main_token);
+        wip_members.appendToField(@intFromEnum(field_name));
+
+        const gop = try duplicate_names.getOrPut(field_name);
+
+        if (gop.found_existing) {
+            try gop.value_ptr.append(sfba_allocator, member.ast.main_token);
+            any_duplicate = true;
+        } else {
+            gop.value_ptr.* = .{};
+            try gop.value_ptr.append(sfba_allocator, member.ast.main_token);
+        }
+
+        const doc_comment_index = try astgen.docCommentAsString(member.firstToken());
+        wip_members.appendToField(@intFromEnum(doc_comment_index));
+
+        const have_value = member.ast.value_expr != 0;
+        wip_members.nextField(bits_per_field, .{have_value});
+
+        if (have_value) {
+            if (arg_inst == .none) {
+                return astgen.failNodeNotes(
+                    node,
+                    "explicitly valued enum missing integer tag type",
+                    .{},
+                    &[_]u32{
+                        try astgen.errNoteNode(
+                            member.ast.value_expr,
+                            "tag value specified here",
+                            .{},
+                        ),
+                    },
+                );
+            }
+            const tag_value_inst = try expr(&block_scope, &namespace.base, .{ .rl = .{ .ty = arg_inst } }, member.ast.value_expr);
+            wip_members.appendToField(@intFromEnum(tag_value_inst));
+        }
+    }
+
+    if (any_duplicate) {
+        var it = duplicate_names.iterator();
+
+        while (it.next()) |entry| {
+            const record = entry.value_ptr.*;
+            if (record.items.len > 1) {
+                var error_notes = std.ArrayList(u32).init(astgen.arena);
+
+                for (record.items[1..]) |duplicate| {
+                    try error_notes.append(try astgen.errNoteTok(duplicate, "duplicate field here", .{}));
+                }
+
+                try error_notes.append(try astgen.errNoteNode(node, "enum declared here", .{}));
+
+                try astgen.appendErrorTokNotes(
+                    record.items[0],
+                    "duplicate enum field name",
+                    .{},
+                    error_notes.items,
+                );
+            }
+        }
+
+        return error.AnalysisFail;
+    }
+
+    if (!block_scope.isEmpty()) {
+        _ = try block_scope.addBreak(.break_inline, decl_inst, .void_value);
+    }
+
+    var fields_hash: std.zig.SrcHash = undefined;
+    fields_hasher.final(&fields_hash);
+
+    const body = block_scope.instructionsSlice();
+    const body_len = astgen.countBodyLenAfterFixups(body);
+
+    try gz.setEnum(decl_inst, .{
+        .src_node = node,
+        .nonexhaustive = nonexhaustive,
+        .tag_type = arg_inst,
+        .captures_len = @intCast(namespace.captures.count()),
+        .body_len = body_len,
+        .fields_len = @intCast(counts.total_fields),
+        .decls_len = @intCast(counts.decls),
+        .fields_hash = fields_hash,
+    });
+
+    wip_members.finishBits(bits_per_field);
+    const decls_slice = wip_members.declsSlice();
+    const fields_slice = wip_members.fieldsSlice();
+    try astgen.extra.ensureUnusedCapacity(gpa, namespace.captures.count() + decls_slice.len + body_len + fields_slice.len);
+    astgen.extra.appendSliceAssumeCapacity(@ptrCast(namespace.captures.keys()));
+    astgen.extra.appendSliceAssumeCapacity(decls_slice);
+    astgen.appendBodyWithFixups(body);
+    astgen.extra.appendSliceAssumeCapacity(fields_slice);
+
+    block_scope.unstack();
+    return decl_inst.toRef();
+}
+
 fn containerDecl(
     gz: *GenZir,
     scope: *Scope,
@@ -5433,269 +5710,8 @@ fn containerDecl(
             return rvalue(gz, ri, result, node);
         },
         .keyword_enum => {
-            if (container_decl.layout_token) |t| {
-                return astgen.failTok(t, "enums do not support 'packed' or 'extern'; instead provide an explicit integer tag type", .{});
-            }
-            // Count total fields as well as how many have explicitly provided tag values.
-            const counts = blk: {
-                var values: usize = 0;
-                var total_fields: usize = 0;
-                var decls: usize = 0;
-                var nonexhaustive_node: Ast.Node.Index = 0;
-                var nonfinal_nonexhaustive = false;
-                for (container_decl.ast.members) |member_node| {
-                    var member = tree.fullContainerField(member_node) orelse {
-                        decls += 1;
-                        continue;
-                    };
-                    member.convertToNonTupleLike(astgen.tree.nodes);
-                    if (member.ast.tuple_like) {
-                        return astgen.failTok(member.ast.main_token, "enum field missing name", .{});
-                    }
-                    if (member.comptime_token) |comptime_token| {
-                        return astgen.failTok(comptime_token, "enum fields cannot be marked comptime", .{});
-                    }
-                    if (member.ast.type_expr != 0) {
-                        return astgen.failNodeNotes(
-                            member.ast.type_expr,
-                            "enum fields do not have types",
-                            .{},
-                            &[_]u32{
-                                try astgen.errNoteNode(
-                                    node,
-                                    "consider 'union(enum)' here to make it a tagged union",
-                                    .{},
-                                ),
-                            },
-                        );
-                    }
-                    if (member.ast.align_expr != 0) {
-                        return astgen.failNode(member.ast.align_expr, "enum fields cannot be aligned", .{});
-                    }
-
-                    const name_token = member.ast.main_token;
-                    if (mem.eql(u8, tree.tokenSlice(name_token), "_")) {
-                        if (nonexhaustive_node != 0) {
-                            return astgen.failNodeNotes(
-                                member_node,
-                                "redundant non-exhaustive enum mark",
-                                .{},
-                                &[_]u32{
-                                    try astgen.errNoteNode(
-                                        nonexhaustive_node,
-                                        "other mark here",
-                                        .{},
-                                    ),
-                                },
-                            );
-                        }
-                        nonexhaustive_node = member_node;
-                        if (member.ast.value_expr != 0) {
-                            return astgen.failNode(member.ast.value_expr, "'_' is used to mark an enum as non-exhaustive and cannot be assigned a value", .{});
-                        }
-                        continue;
-                    } else if (nonexhaustive_node != 0) {
-                        nonfinal_nonexhaustive = true;
-                    }
-                    total_fields += 1;
-                    if (member.ast.value_expr != 0) {
-                        if (container_decl.ast.arg == 0) {
-                            return astgen.failNode(member.ast.value_expr, "value assigned to enum tag with inferred tag type", .{});
-                        }
-                        values += 1;
-                    }
-                }
-                if (nonfinal_nonexhaustive) {
-                    return astgen.failNode(nonexhaustive_node, "'_' field of non-exhaustive enum must be last", .{});
-                }
-                break :blk .{
-                    .total_fields = total_fields,
-                    .values = values,
-                    .decls = decls,
-                    .nonexhaustive_node = nonexhaustive_node,
-                };
-            };
-            if (counts.nonexhaustive_node != 0 and container_decl.ast.arg == 0) {
-                try astgen.appendErrorNodeNotes(
-                    node,
-                    "non-exhaustive enum missing integer tag type",
-                    .{},
-                    &[_]u32{
-                        try astgen.errNoteNode(
-                            counts.nonexhaustive_node,
-                            "marked non-exhaustive here",
-                            .{},
-                        ),
-                    },
-                );
-            }
-            // In this case we must generate ZIR code for the tag values, similar to
-            // how structs are handled above.
-            const nonexhaustive = counts.nonexhaustive_node != 0;
-
-            const decl_inst = try gz.reserveInstructionIndex();
-
-            var namespace: Scope.Namespace = .{
-                .parent = scope,
-                .node = node,
-                .inst = decl_inst,
-                .declaring_gz = gz,
-                .maybe_generic = astgen.within_fn,
-            };
-            defer namespace.deinit(gpa);
-
-            // The enum_decl instruction introduces a scope in which the decls of the enum
-            // are in scope, so that tag values can refer to decls within the enum itself.
-            astgen.advanceSourceCursorToNode(node);
-            var block_scope: GenZir = .{
-                .parent = &namespace.base,
-                .decl_node_index = node,
-                .decl_line = gz.decl_line,
-                .astgen = astgen,
-                .is_comptime = true,
-                .instructions = gz.instructions,
-                .instructions_top = gz.instructions.items.len,
-            };
-            defer block_scope.unstack();
-
-            _ = try astgen.scanDecls(&namespace, container_decl.ast.members);
-            namespace.base.tag = .namespace;
-
-            const arg_inst: Zir.Inst.Ref = if (container_decl.ast.arg != 0)
-                try comptimeExpr(&block_scope, &namespace.base, coerced_type_ri, container_decl.ast.arg)
-            else
-                .none;
-
-            const bits_per_field = 1;
-            const max_field_size = 3;
-            var wip_members = try WipMembers.init(gpa, &astgen.scratch, @intCast(counts.decls), @intCast(counts.total_fields), bits_per_field, max_field_size);
-            defer wip_members.deinit();
-
-            var fields_hasher = std.zig.SrcHasher.init(.{});
-            if (container_decl.ast.arg != 0) {
-                fields_hasher.update(tree.getNodeSource(container_decl.ast.arg));
-            }
-            fields_hasher.update(&.{@intFromBool(nonexhaustive)});
-
-            var sfba = std.heap.stackFallback(256, astgen.arena);
-            const sfba_allocator = sfba.get();
-
-            var duplicate_names = std.AutoArrayHashMap(Zir.NullTerminatedString, std.ArrayListUnmanaged(Ast.TokenIndex)).init(sfba_allocator);
-            try duplicate_names.ensureTotalCapacity(counts.total_fields);
-
-            // When there aren't errors, use this to avoid a second iteration.
-            var any_duplicate = false;
-
-            for (container_decl.ast.members) |member_node| {
-                if (member_node == counts.nonexhaustive_node)
-                    continue;
-                fields_hasher.update(tree.getNodeSource(member_node));
-                var member = switch (try containerMember(&block_scope, &namespace.base, &wip_members, member_node)) {
-                    .decl => continue,
-                    .field => |field| field,
-                };
-                member.convertToNonTupleLike(astgen.tree.nodes);
-                assert(member.comptime_token == null);
-                assert(member.ast.type_expr == 0);
-                assert(member.ast.align_expr == 0);
-
-                const field_name = try astgen.identAsString(member.ast.main_token);
-                wip_members.appendToField(@intFromEnum(field_name));
-
-                const gop = try duplicate_names.getOrPut(field_name);
-
-                if (gop.found_existing) {
-                    try gop.value_ptr.append(sfba_allocator, member.ast.main_token);
-                    any_duplicate = true;
-                } else {
-                    gop.value_ptr.* = .{};
-                    try gop.value_ptr.append(sfba_allocator, member.ast.main_token);
-                }
-
-                const doc_comment_index = try astgen.docCommentAsString(member.firstToken());
-                wip_members.appendToField(@intFromEnum(doc_comment_index));
-
-                const have_value = member.ast.value_expr != 0;
-                wip_members.nextField(bits_per_field, .{have_value});
-
-                if (have_value) {
-                    if (arg_inst == .none) {
-                        return astgen.failNodeNotes(
-                            node,
-                            "explicitly valued enum missing integer tag type",
-                            .{},
-                            &[_]u32{
-                                try astgen.errNoteNode(
-                                    member.ast.value_expr,
-                                    "tag value specified here",
-                                    .{},
-                                ),
-                            },
-                        );
-                    }
-                    const tag_value_inst = try expr(&block_scope, &namespace.base, .{ .rl = .{ .ty = arg_inst } }, member.ast.value_expr);
-                    wip_members.appendToField(@intFromEnum(tag_value_inst));
-                }
-            }
-
-            if (any_duplicate) {
-                var it = duplicate_names.iterator();
-
-                while (it.next()) |entry| {
-                    const record = entry.value_ptr.*;
-                    if (record.items.len > 1) {
-                        var error_notes = std.ArrayList(u32).init(astgen.arena);
-
-                        for (record.items[1..]) |duplicate| {
-                            try error_notes.append(try astgen.errNoteTok(duplicate, "duplicate field here", .{}));
-                        }
-
-                        try error_notes.append(try astgen.errNoteNode(node, "enum declared here", .{}));
-
-                        try astgen.appendErrorTokNotes(
-                            record.items[0],
-                            "duplicate enum field name",
-                            .{},
-                            error_notes.items,
-                        );
-                    }
-                }
-
-                return error.AnalysisFail;
-            }
-
-            if (!block_scope.isEmpty()) {
-                _ = try block_scope.addBreak(.break_inline, decl_inst, .void_value);
-            }
-
-            var fields_hash: std.zig.SrcHash = undefined;
-            fields_hasher.final(&fields_hash);
-
-            const body = block_scope.instructionsSlice();
-            const body_len = astgen.countBodyLenAfterFixups(body);
-
-            try gz.setEnum(decl_inst, .{
-                .src_node = node,
-                .nonexhaustive = nonexhaustive,
-                .tag_type = arg_inst,
-                .captures_len = @intCast(namespace.captures.count()),
-                .body_len = body_len,
-                .fields_len = @intCast(counts.total_fields),
-                .decls_len = @intCast(counts.decls),
-                .fields_hash = fields_hash,
-            });
-
-            wip_members.finishBits(bits_per_field);
-            const decls_slice = wip_members.declsSlice();
-            const fields_slice = wip_members.fieldsSlice();
-            try astgen.extra.ensureUnusedCapacity(gpa, namespace.captures.count() + decls_slice.len + body_len + fields_slice.len);
-            astgen.extra.appendSliceAssumeCapacity(@ptrCast(namespace.captures.keys()));
-            astgen.extra.appendSliceAssumeCapacity(decls_slice);
-            astgen.appendBodyWithFixups(body);
-            astgen.extra.appendSliceAssumeCapacity(fields_slice);
-
-            block_scope.unstack();
-            return rvalue(gz, ri, decl_inst.toRef(), node);
+            const result = try enumDeclInner(gz, scope, node, container_decl.layout_token, container_decl.ast.members, container_decl.ast.arg);
+            return rvalue(gz, ri, result, node);
         },
         .keyword_opaque => {
             assert(container_decl.ast.arg == 0);

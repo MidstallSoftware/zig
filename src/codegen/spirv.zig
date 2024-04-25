@@ -1415,7 +1415,7 @@ const DeclGen = struct {
         const layout = self.unionLayout(ty);
         if (!layout.has_payload) {
             // No payload, so represent this as just the tag type.
-            return try self.resolveType(Type.fromInterned(union_obj.enum_tag_ty), .indirect);
+            return try self.resolveType(Type.fromInterned(union_obj.tag_ty), .indirect);
         }
 
         var member_types: [4]IdRef = undefined;
@@ -1424,7 +1424,7 @@ const DeclGen = struct {
         const u8_ty_id = try self.resolveType(Type.u8, .direct); // TODO: What if Int8Type is not enabled?
 
         if (layout.tag_size != 0) {
-            const tag_ty_id = try self.resolveType(Type.fromInterned(union_obj.enum_tag_ty), .indirect);
+            const tag_ty_id = try self.resolveType(Type.fromInterned(union_obj.tag_ty), .indirect);
             member_types[layout.tag_index] = tag_ty_id;
             member_names[layout.tag_index] = "(tag)";
         }
@@ -4332,7 +4332,7 @@ const DeclGen = struct {
         const mod = self.module;
         const ip = &mod.intern_pool;
         const union_ty = mod.typeToUnion(ty).?;
-        const tag_ty = Type.fromInterned(union_ty.enum_tag_ty);
+        const tag_ty = Type.fromInterned(union_ty.tag_ty);
 
         if (union_ty.getLayout(ip) == .@"packed") {
             unreachable; // TODO

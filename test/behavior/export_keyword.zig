@@ -16,9 +16,9 @@ const PackedStruct = packed struct {
     a: u8,
     b: u8,
 };
-const PackedUnion = packed union {
+const PackedUnion = packed union(u8) {
     a: u8,
-    b: u32,
+    b: u8,
 };
 
 test "packed struct, enum, union parameters in extern function" {
