@@ -5831,6 +5831,9 @@ pub const SendError = error{
     /// process will also receive a SIGPIPE unless MSG.NOSIGNAL is set.
     BrokenPipe,
 
+    /// The socket has not been bound.
+    SocketNotBound,
+
     FileDescriptorNotASocket,
 
     /// Network is unreachable.
