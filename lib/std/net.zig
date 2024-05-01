@@ -1799,8 +1799,8 @@ pub const Stream = struct {
         }
     }
 
-    pub const ReadError = posix.RecvFromError || posix.ReadError;
-    pub const WriteError = posix.SendToError || posix.WriteError;
+    pub const ReadError = posix.RecvFromError;
+    pub const WriteError = posix.SendToError || posix.SendMsgError;
 
     pub const Reader = io.Reader(Stream, ReadError, read);
     pub const Writer = io.Writer(Stream, WriteError, write);
@@ -1856,9 +1856,19 @@ pub const Stream = struct {
             } else {
                 return bytes_received;
             }
-        }
+        } else {
+            var msghdr: posix.msghdr = .{
+                .name = null,
+                .namelen = 0,
+                .iov = @ptrCast(iovecs.ptr),
+                .iovlen = @intCast(iovecs.len),
+                .control = null,
+                .controllen = 0,
+                .flags = 0,
+            };
 
-        return posix.readv(s.handle, @ptrCast(iovecs));
+            return posix.recvmsg(s.handle, &msghdr, 0);
+        }
     }
 
     /// Returns the number of bytes read. If the number read is smaller than
@@ -1937,9 +1947,19 @@ pub const Stream = struct {
             } else {
                 return @intCast(bytes_sent);
             }
-        }
+        } else {
+            var msghdr: posix.msghdr_const = .{
+                .name = null,
+                .namelen = 0,
+                .iov = @ptrCast(iovecs.ptr),
+                .iovlen = @intCast(iovecs.len),
+                .control = null,
+                .controllen = 0,
+                .flags = 0,
+            };
 
-        return posix.writev(s.handle, @ptrCast(iovecs));
+            return posix.sendmsg(s.handle, &msghdr, 0);
+        }
     }
 
     /// The `iovecs` parameter is mutable because this function needs to mutate the fields in
