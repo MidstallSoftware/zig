@@ -5867,7 +5867,7 @@ pub const SendMsgError = SendError || error{
     SocketNotConnected,
 };
 
-pub const SendToError = SendMsgError  || error{
+pub const SendToError = SendMsgError || error{
     /// The destination address is not reachable by the bound address.
     UnreachableAddress,
     /// The destination address is not listening.
