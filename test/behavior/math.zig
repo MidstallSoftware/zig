@@ -607,8 +607,6 @@ fn testSignedNegationWrappingEval(x: i16) !void {
 }
 
 test "unsigned negation wrapping" {
-    if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-
     try testUnsignedNegationWrappingEval(1);
     try comptime testUnsignedNegationWrappingEval(1);
 }
@@ -1384,8 +1382,6 @@ test "quad hex float literal parsing accurate" {
 }
 
 test "truncating shift left" {
-    if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-
     try testShlTrunc(maxInt(u16));
     try comptime testShlTrunc(maxInt(u16));
 }
