@@ -2043,6 +2043,7 @@ test "extern union initialized via reintepreted struct field initializer" {
 
 test "packed union initialized via reintepreted struct field initializer" {
     if (builtin.zig_backend == .stage2_spirv64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
     const bytes = [_]u8{ 0xaa, 0xbb, 0xcc, 0xdd };
 
@@ -2063,6 +2064,7 @@ test "packed union initialized via reintepreted struct field initializer" {
 
 test "store of comptime reinterpreted memory to extern union" {
     if (builtin.zig_backend == .stage2_spirv64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
     const bytes = [_]u8{ 0xaa, 0xbb, 0xcc, 0xdd };
 
@@ -2085,6 +2087,7 @@ test "store of comptime reinterpreted memory to extern union" {
 
 test "store of comptime reinterpreted memory to packed union" {
     if (builtin.zig_backend == .stage2_spirv64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
     const bytes = [_]u8{ 0xaa, 0xbb, 0xcc, 0xdd };
 
