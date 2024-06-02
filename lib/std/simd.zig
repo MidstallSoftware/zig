@@ -37,8 +37,14 @@ pub fn suggestVectorLengthForCpu(comptime T: type, comptime cpu: std.Target.Cpu)
             //       the 2048 bits or using just 64 per vector or something in between
             if (std.Target.mips.featureSetHas(cpu.features, std.Target.mips.Feature.mips3d)) break :blk 64;
         } else if (cpu.arch.isRISCV()) {
-            // in risc-v the Vector Extension allows configurable vector sizes, but a standard size of 128 is a safe estimate
-            if (std.Target.riscv.featureSetHas(cpu.features, .v)) break :blk 128;
+            // IN RISC-V Vector Registers are length agnostic so there's no good way to determine the best size.
+            // The base max length of a vector register is 1024 bits, so as long as it can divide evenly
+            // it'll be fine. Other CPUs can provide flags that show they have larger vector registers.
+            if (std.Target.riscv.featureSetHas(cpu.features, .v)) {
+                // TODO: add support for flags like zvl1024b and friends.
+                const max_vec_bits: u32 = 1024;
+                if (max_vec_bits % element_bit_size == 0) break :blk max_vec_bits / element_bit_size;
+            }
         } else if (cpu.arch.isSPARC()) {
             // TODO: Test Sparc capability to handle bigger vectors
             //       In theory Sparc have 32 registers of 64 bits which can use in parallel
