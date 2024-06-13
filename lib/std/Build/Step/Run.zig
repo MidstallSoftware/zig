@@ -153,6 +153,7 @@ pub fn create(owner: *std.Build, name: []const u8) *Run {
             .name = name,
             .owner = owner,
             .makeFn = make,
+            .formatFn = format,
         }),
         .argv = .{},
         .cwd = null,
@@ -805,6 +806,24 @@ fn make(step: *Step, prog_node: std.Progress.Node) !void {
         b.cache_root,
         &digest,
     );
+}
+
+fn format(step: *const Step) std.posix.WriteError![]const u8 {
+    const b = step.owner;
+    const arena = b.allocator;
+    const self: *const Run = @fieldParentPtr("step", step);
+
+    var output = std.ArrayList(u8).init(arena);
+    errdefer output.deinit();
+
+    output.writer().writeAll("Command:") catch @panic("OOM");
+
+    for (self.argv.items) |item| {
+        output.writer().writeByte(' ') catch @panic("OOM");
+        std.fmt.formatType(item, "", .{}, output.writer(), 1) catch @panic("OOM");
+    }
+
+    return output.toOwnedSlice() catch @panic("OOM");
 }
 
 fn populateGeneratedPaths(
