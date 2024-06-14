@@ -19,52 +19,31 @@
     ...
   } @ inputs:
     let
-      zigOverlay = f: p: {
-        zig = p.stdenv.mkDerivation {
-          pname = "zig";
-          version = "0.12.0-dev.${self.shortRev or "dirty"}";
+      zigOverlay = final: prev: {
+        zig_0_14 = (prev.zig_0_12.override {
+          llvmPackages = prev.llvmPackages_18;
+        }).overrideAttrs (f: p: {
+          version = "0.14.0-dev.${self.shortRev or "dirty"}";
+          src = nixpkgs.lib.cleanSource self;
 
-          src = p.lib.cleanSource self;
-
-          nativeBuildInputs = [
-            p.cmake
-            p.llvmPackages_17.llvm.dev
-          ];
-
-          buildInputs = [
-            p.stdenv.cc.cc.lib
-            p.libxml2
-            p.zlib
-          ] ++ (with p.llvmPackages_17; [
-            libclang
-            lld
-            llvm
-          ]);
-
-          env.ZIG_GLOBAL_CACHE_DIR = "$TMPDIR/zig-cache";
-
-          postPatch = ''
-            substituteInPlace lib/std/zig/system.zig \
-              --replace "/usr/bin/env" "${p.coreutils}/bin/env"
+          postBuild = ''
+            stage3/bin/zig build langref
           '';
 
-          doInstallCheck = true;
-          installCheckPhase = ''
-            runHook preInstallCheck
-
-            $out/bin/zig test --cache-dir "$TMPDIR/zig-test-cache" -I $src/test $src/test/behavior.zig
-
-            runHook postInstallCheck
+          postInstall = ''
+            install -Dm444 ../zig-out/doc/langref.html -t $doc/share/doc/zig-${f.version}/html
           '';
-        };
+        });
+
+        zig = final.zig_0_14;
       };
     in
     (flake-utils.lib.eachSystem flake-utils.lib.allSystems (
       system: let
-        pkgs = (import nixpkgs {inherit system;}).appendOverlays [
+        pkgs = nixpkgs.${system}.legacyPackages.appendOverlays [
           zigOverlay
         ];
-        llvmPackages = pkgs.llvmPackages_17;
+        llvmPackages = pkgs.llvmPackages_18;
       in {
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs;
